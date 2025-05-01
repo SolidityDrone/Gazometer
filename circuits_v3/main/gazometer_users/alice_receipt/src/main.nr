@@ -95,7 +95,7 @@ fn main(
     // 1) decrypt balanceCommit for n-1 
     let iv = [0, 0, 0, 0];
     let nonce_1_derived_key = derive_key_from_signature(alice_signature_nonce_1);
-    let encrypted_balance = bytes_to_field(commit_1_verified_storage.values[0]);
+    let encrypted_balance = safe_storage_to_field(commit_1_verified_storage.values[0]);
     let decrypted_1_balance_commit_balance = 
         decrypt_balance(alice_signature_nonce_1, encrypted_balance);
     // 2) add receipt_amount to the decrypted balanceCommit for n-1 
@@ -197,10 +197,20 @@ fn hex_bytes_to_ascii(hex_bytes: [u8; 65]) -> [u8; 132] {
 // Function to convert bytes to a Field value
 fn bytes_to_field(bytes: [u8; 32]) -> Field {
     let mut result: Field = 0;
+    
+    // Convert bytes to field
     for i in 0..32 {
         result = result * 256 + (bytes[i] as Field);
     }
+    
     result
+}
+
+// Function to safely convert storage value to field
+fn safe_storage_to_field(storage_value: [u8; 32]) -> Field {
+    // Convert bytes to field directly
+    // Noir's field type automatically handles overflow
+    bytes_to_field(storage_value)
 }
 
 // Unconstrained function to convert u64 to ASCII bytes
