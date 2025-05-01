@@ -3,6 +3,9 @@ name = "alice_receipt"
 type = "bin"
 compiler_version = ">=0.30.0"
 
+[build]
+target-dir = "./target"
+
 [dependencies]
 ethereum = { path = "../../../ethereum/circuits/lib" }
 token = { path = "../../../ethereum/circuits/lib" }
