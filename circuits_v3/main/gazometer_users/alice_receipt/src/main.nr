@@ -24,38 +24,66 @@ use dep::keccak256::keccak256;
 
 fn main(
     alice_signature_nonce_1: [u8; 65],
+    alice_signature_nonce_2: [u8; 65],
     chain_id: Field,
     block_number: u64,
     contract_address: Address,
-    storage_value: [Field; 30],
     receipt_amount: Field,
 ) -> pub (Field, u64) {
 
-    let balance: Field = 100;
     let commit_slot = 2;
     let balance_commit_slot = 1;
 
-    
     let commit_1_hash = 
         keccak256(hex_bytes_to_ascii(alice_signature_nonce_1), 132);
+    let commit_2_hash = 
+        keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132);
+    
+    //----- compute storage keys ----- //
 
     let mut key_and_slot: [u8; 64] = [0; 64];    
-    // Copy the hash into the buffer
     for i in 0..32 {
         key_and_slot[i] = commit_1_hash[i];
     }
-    // Add the slot number at the end (padded with zeros)
-    key_and_slot[63] = 2;  // slot 2
-    // Hash the concatenated key and slot to get the storage key
+    key_and_slot[63] = commit_slot as u8;  
     let commit_1_storage_key = keccak256(key_and_slot, 64);
 
+    for i in 0..32 {
+        key_and_slot[i] = commit_2_hash[i];
+    }
+    key_and_slot[63] = commit_slot as u8;  
+    let commit_2_storage_key = keccak256(key_and_slot, 64);
+
+    //---- Get Verified Storage Values ----- //
+        // commit for n-1 
     let commit_1_verified_storage = get_account_with_storage(
         chain_id,
         block_number,
         contract_address,
         commit_1_storage_key
     );
+        // balance for n-1 
+    let balance_commit_verified_storage = get_account_with_storage(
+        chain_id,
+        block_number,
+        contract_address,
+        balance_commit_1_storage_key
+    );
+    
+    //------ Compose new balance -----------//
+    // 1) decrypt balanceCommit for n-1 
+    let iv = [0, 0, 0, 0];
+    let nonce_1_derived_key = derive_key_from_signature(alice_signature_nonce_1);
+    let decrypted_1_balance_commit = 
+        decrypt_balance(nonce_1_derived_key, balance_commit_verified_storage.storage[0]);
+    // 2) add receipt_amount to the decrypted balanceCommit for n-1 
+    let new_balance = decrypted_1_balance_commit + receipt_amount;
+    // 3) encrypt the new balance with sign(n)
+    let new_key = derive_key_from_signature(alice_signature_nonce_2);
+    let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
+    let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
 
+    let encrypted_final_balance = encrypted_fields[0];
     
    
     // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
