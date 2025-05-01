@@ -23,7 +23,7 @@ use dep::keccak256::keccak256;
 fn main(
     alice_signature_nonce_1: [u8; 65],
     alice_signature_nonce_2: [u8; 65],
-    chain_id: Field,
+    chain_id: pub Field,
     block_number: u64,
     message_nonce_1: u64,
     message_nonce_2: u64,
@@ -32,8 +32,8 @@ fn main(
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
     contract_address: Address,
-    receipt_amount: Field,
-) -> pub (Field, u64, Address, Bytes32, [u8; 32], Field) {
+    receipt_amount: pub Field,
+) -> pub (Field, u64, Address, Bytes32, [u8; 32], Field, Field) {
 
     // ---- Check nonce are valid ------ //
     let hashed_message_1 = hash_u64(message_nonce_1);
@@ -118,7 +118,8 @@ fn main(
         contract_address,
         commit_1_verified_storage.block_hash, 
         nullifier, // <---- nullifier for commit_2 
-        encrypted_final_balance // <-- balance destined for commit_2
+        encrypted_final_balance, // <-- balance destined for commit_2
+        receipt_amount
     )
 }
 
@@ -353,7 +354,7 @@ fn test_storage_proof() {
     
     let receipt_amount = 100;
     
-    let (chain_id, block_number, contract_address, commit_1_value, droneIsLegend, encrypted_balance) = main(
+    let (chain_id, block_number, contract_address, block_hash, droneIsLegend, encrypted_balance) = main(
         alice_signature_nonce_1, 
         alice_signature_nonce_2, 
         chain_id, 
@@ -367,7 +368,20 @@ fn test_storage_proof() {
         contract_address, 
         receipt_amount
     );
-    println(commit_1_value);
+    println("---- CIRCUIT OUTPUT ----");
+    println("chain_id");
+    println(chain_id);
+    println("block_number");
+    println(block_number);
+    println("contract_address");
+    println(contract_address);
+    println("block_hash");
+    println(block_hash);
+    println("droneIsLegend");
+    println(droneIsLegend);
+    println("encrypted_balance");
+    println(encrypted_balance);
+    println("---- END OF CIRCUIT OUTPUT ----");
 }
 
 #[test]
