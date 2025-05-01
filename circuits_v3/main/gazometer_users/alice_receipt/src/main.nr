@@ -27,7 +27,7 @@ fn main(
     block_number: u64,
     contract_address: Address,
     receipt_amount: Field,
-) -> pub (Field, u64, Bytes32, Bytes32) {
+) -> pub (Field, u64, Bytes32, [u8; 32], Field) {
 
     let balance_commit_slot = 2;
 
