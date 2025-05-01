@@ -6,3 +6,5 @@ compiler_version = ">=0.30.0"
 [dependencies]
 ethereum = { path = "../../../ethereum/circuits/lib" }
 token = { path = "../../../ethereum/circuits/lib" }
+hydra = { path = "../../../lib/noir-hydra" }
+keccak256 = { path = "../../../lib/keccak256" }

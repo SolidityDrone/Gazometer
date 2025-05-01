@@ -5,35 +5,141 @@ use dep::ethereum::account::{get_account, AccountWithinBlock, MAX_PREFIXED_KEY_N
 use dep::ethereum::header::BlockHeaderPartial;
 use dep::ethereum::merkle_patricia_proofs::proof::{ProofInput, Key, Value, Proof, Node, Leaf, verify_merkle_proof};
 use dep::ethereum::verifiers::storage::verify_storage_values;
-
-
 use dep::ethereum::account_with_storage::get_account_with_storage;
+use dep::hydra::bn254::{enc, dec};
+use dep::keccak256::keccak256;
+
+
+// Alice sign nonce n & n-1
+// n-1 is hashed and check that keccak(sig(n-1))) exist in the storage of the contract
+// if it does, prove state of balanceCommit exist for that key(keccak(sig(n-1)))
+// use sig(n-1) to decrypt the balanceCommit of n-1 and save the value
+
+// updated Finalbalance = receipt_balance_change + n-1 decrypted balanceCommit
+// encrypt the FinalBalance with sign(n)
+
+// output chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
+
+
+
+fn main(
+    alice_signature_nonce_1: [u8; 65],
+    chain_id: Field,
+    block_number: u64,
+    contract_address: Address,
+    storage_value: [Field; 30],
+    receipt_amount: Field,
+) -> pub (Field, u64) {
+
+    let balance: Field = 100;
+    let commit_slot = 2;
+    let balance_commit_slot = 1;
+
+    
+    let commit_1_hash = 
+        keccak256(hex_bytes_to_ascii(alice_signature_nonce_1), 132);
+
+    let mut key_and_slot: [u8; 64] = [0; 64];    
+    // Copy the hash into the buffer
+    for i in 0..32 {
+        key_and_slot[i] = commit_1_hash[i];
+    }
+    // Add the slot number at the end (padded with zeros)
+    key_and_slot[63] = 2;  // slot 2
+    // Hash the concatenated key and slot to get the storage key
+    let commit_1_storage_key = keccak256(key_and_slot, 64);
+
+    let commit_1_verified_storage = get_account_with_storage(
+        chain_id,
+        block_number,
+        contract_address,
+        commit_1_storage_key
+    );
+
+    
+   
+    // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
+    (chain_id, block_number)
+}
 
 // Define a larger key size that can accommodate the nibble conversion of a 32-byte key
 global LARGER_KEY_SIZE: u32 = 132; // 2 * 32 + 68 (extra space for prefix)
 
-fn main(
-    chain_id: Field,
-    block_number: u64,
-    address: Address,
-    storage_key: Bytes32,
-    storage_value: [Field; 30]
-) -> pub (Field, u64, Bytes32) {
-
-    // 3. Verify the storage value
-    // This verifies that the storage value at the given key matches the expected value
-    // using the provided storage proof
-    // The verify_storage_values function takes the storage proof and the expected value
-    let storage_result = get_account_with_storage(
-        chain_id,
-        block_number,
-        address,
-        storage_key
-    );
-    
-    // Return chain_id, block_number, and block_hash
-    (chain_id, block_number, storage_result.block_hash)
+// Derive a deterministic key from a signature
+fn derive_key_from_signature(signature: [u8; 64]) -> [Field; 4] {
+    let mut key = [0; 4];
+    for i in 0..4 {
+        let mut value: u64 = 0;
+        for j in 0..4 {
+            value = (value << 8) | (signature[i * 4 + j] as u64);
+        }
+        key[i] = value as Field;
+    }
+    key
 }
+
+fn decrypt_balance(
+    // Signature data
+    signature: [u8; 64],
+    
+    // Encrypted balance (field element)
+    encrypted_balance: Field,
+) -> pub Field {
+    // Derive key from signature (same as encryption)
+    let key = derive_key_from_signature(signature);
+    
+    // Create a fixed IV (same as encryption)
+    let iv = [0, 0, 0, 0];
+    
+    // Create encrypted fields array
+    let encrypted_fields = [encrypted_balance, 0, 0, 0, 0, 0, 0, 0];
+    
+    println("Fields before decryption:");
+    println(encrypted_fields);
+    
+    // Decrypt the fields
+    let decrypted_fields = dec::decrypt(encrypted_fields, key, iv);
+    
+    println("Decrypted fields:");
+    println(decrypted_fields);
+    
+    // Return the first decrypted field element
+    decrypted_fields[0]
+}
+
+// Helper function to convert a single hex nibble to its ASCII character
+fn nibble_to_ascii(nibble: u8) -> u8 {
+    if nibble < 10 {
+        nibble + 48  // '0' to '9'
+    } else {
+        nibble + 87  // 'a' to 'f'
+    }
+}
+
+// Function to convert hex bytes to ASCII string representation
+fn hex_bytes_to_ascii(hex_bytes: [u8; 65]) -> [u8; 132] {
+    let mut result: [u8; 132] = [0; 132];
+    
+    // Add "0x" prefix
+    result[0] = 48;  // '0'
+    result[1] = 120; // 'x'
+    
+    // Convert each byte to two ASCII characters
+    for i in 0..65 {
+        let byte = hex_bytes[i];
+        let high_nibble = byte >> 4;
+        let low_nibble = byte & 0x0f;
+        
+        result[2 + i * 2] = nibble_to_ascii(high_nibble);
+        result[2 + i * 2 + 1] = nibble_to_ascii(low_nibble);
+    }
+    
+    result
+}
+
+
+
+
 
 
 #[test]
@@ -44,11 +150,11 @@ fn test_storage_proof() {
     // Block number
     let block_number = 8220588;
     
-    // Address to check - using the correct type
-    let address: Address = [0x52, 0xE2, 0xD6, 0x4b, 0x28, 0xC3, 0xFc, 0x99, 0xB7, 0x17, 0x90, 0xBF, 0x62, 0x23, 0xf6, 0xaA, 0x00, 0x44, 0x53, 0xb1];
+    // contract_address to check - using the correct type
+    let contract_address: Address = [0x52, 0xE2, 0xD6, 0x4b, 0x28, 0xC3, 0xFc, 0x99, 0xB7, 0x17, 0x90, 0xBF, 0x62, 0x23, 0xf6, 0xaA, 0x00, 0x44, 0x53, 0xb1];
     
     // Storage key to check - using a smaller key size (16 bytes instead of 32)
-    let storage_key: Bytes32 = [
+    let commit_1: Bytes32 = [
         0xc2, 0x93, 0x1d, 0xa8, 0xf1, 0xd2, 0xaf, 0x04, 0x4d, 0xd9, 0xb7, 0x1e, 0xdd, 0xce, 0xa6, 0xcb,
         0x93, 0x84, 0xa4, 0x29, 0x56, 0x76, 0x32, 0x32, 0x39, 0x06, 0x06, 0xea, 0x82, 0xc4, 0xf0, 0xe2
     ];
@@ -59,15 +165,92 @@ fn test_storage_proof() {
     0xd1,     0x4a,     0x09,     0x2a,     0x34,     0x3d,     0x5a,     0xe5,     0x59,     0x79,     0x08,     0x4f,     0xee,     0xa1
     ];
 
-    // Call the main function with the updated proof input
-    let (chain_id_result, block_number_result, block_hash) = main(
-        chain_id, 
-        block_number, 
-        address, 
-        storage_key,
-        storage_value
-    );
+     let alice_signature_nonce_1: [u8; 65] = [
+        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
+        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
+        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
+        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x1c
+    ];
+     let alice_signature_nonce_2: [u8; 65] = [
+        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
+        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
+        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
+        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x1c
+    ];
     
+    let receipt_amount = 100;
+    
+    let (chain_id, block_number) = main(alice_signature_nonce_1, chain_id, block_number, contract_address, storage_value, receipt_amount);  
    
+} 
+
+#[test]
+fn test_storage_key_generation() {
+    // Given hash
+    let hash: [u8; 32] = [
+        0x48, 0xfc, 0x0d, 0xf3, 0x39, 0x48, 0xd2, 0x89, 0x57, 0xd5, 0xf6, 0x2e, 0xe1, 0x76, 0x43, 0xb0,
+        0x31, 0x1d, 0x4d, 0xda, 0x43, 0xf2, 0xcf, 0x74, 0x78, 0x39, 0x70, 0x3c, 0x52, 0xf3, 0x80, 0x98
+    ];
+    
+    // Create a buffer for the concatenated key and slot
+    let mut key_and_slot: [u8; 64] = [0; 64];
+    
+    // Copy the hash into the buffer
+    for i in 0..32 {
+        key_and_slot[i] = hash[i];
+    }
+    
+    // Add the slot number at the end (padded with zeros)
+    key_and_slot[63] = 2;  // slot 2
+    
+    // Hash the concatenated key and slot to get the storage key
+    let storage_key = keccak256(key_and_slot, 64);
+    
+    println("Original hash:");
+    println(hash);
+    println("Generated storage key:");
+    println(storage_key);
+}
+
+#[test]
+fn test_signature_hashing() {
+    let alice_signature_nonce_1: [u8; 65] = [
+       0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
+        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
+        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
+        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x1c
+    ];
+
+    println("Full signature:");
+    println(alice_signature_nonce_1);
+    println("Hash of full signature:");
+    println(keccak256(alice_signature_nonce_1, 64));
+} 
+
+#[test]
+fn test_hex_literal_hashing() {
+    // The actual hex values as bytes
+    let hex_bytes = [
+        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
+        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
+        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
+        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x1c
+    ];
+
+    // Convert hex bytes to ASCII string representation
+    let hex_string_bytes = hex_bytes_to_ascii(hex_bytes);
+
+    println("Hash from ASCII string bytes (including '0x' prefix):");
+    println(keccak256(hex_string_bytes, 132));
+
+    println("Hash from actual hex bytes:");
+    println(keccak256(hex_bytes, 65));
+
+
+    
 } 
 

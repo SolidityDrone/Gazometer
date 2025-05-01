@@ -6,5 +6,5 @@ compiler_version = ">=1.0.0"
 version = "0.1.5"
 
 [dependencies]
-lib = { path = "../../noir-lib" }
-hydra = { path = "../../noir-hydra" }
+lib = { path = "../../../lib/noir-lib" }
+hydra = { path = "../../../lib/noir-hydra" }
