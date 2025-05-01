@@ -1,5 +1,5 @@
 [package]
-name = "is_crypto_punk_owner"
+name = "alice_receipt"
 type = "bin"
 compiler_version = ">=0.30.0"
 

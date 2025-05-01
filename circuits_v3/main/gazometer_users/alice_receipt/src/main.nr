@@ -1,8 +1,6 @@
 use dep::ethereum::account_with_storage::{get_header, StorageWithinBlock};
 use dep::ethereum::misc::types::{Address, Bytes32};
 use dep::ethereum::account::{get_account, AccountWithinBlock, MAX_PREFIXED_KEY_NIBBLE_LEN};
-// Import the BlockHeaderPartial struct
-use dep::ethereum::header::BlockHeaderPartial;
 use dep::ethereum::merkle_patricia_proofs::proof::{ProofInput, Key, Value, Proof, Node, Leaf, verify_merkle_proof};
 use dep::ethereum::verifiers::storage::verify_storage_values;
 use dep::ethereum::account_with_storage::get_account_with_storage;
@@ -29,10 +27,9 @@ fn main(
     block_number: u64,
     contract_address: Address,
     receipt_amount: Field,
-) -> pub (Field, u64) {
+) -> pub (Field, u64, Bytes32, Bytes32) {
 
-    let commit_slot = 2;
-    let balance_commit_slot = 1;
+    let balance_commit_slot = 2;
 
     let commit_1_hash = 
         keccak256(hex_bytes_to_ascii(alice_signature_nonce_1), 132);
@@ -45,37 +42,36 @@ fn main(
     for i in 0..32 {
         key_and_slot[i] = commit_1_hash[i];
     }
-    key_and_slot[63] = commit_slot as u8;  
+    key_and_slot[63] = balance_commit_slot as u8;  
     let commit_1_storage_key = keccak256(key_and_slot, 64);
 
     for i in 0..32 {
         key_and_slot[i] = commit_2_hash[i];
     }
-    key_and_slot[63] = commit_slot as u8;  
-    let commit_2_storage_key = keccak256(key_and_slot, 64);
+    key_and_slot[63] = balance_commit_slot as u8;  
+    let balance_commit_1_storage_key = keccak256(key_and_slot, 64);
 
     //---- Get Verified Storage Values ----- //
-        // commit for n-1 
+        // get balance for key(commit_1_storage_key) => balance_commit_verified_storage.values[0]
     let commit_1_verified_storage = get_account_with_storage(
         chain_id,
         block_number,
         contract_address,
         commit_1_storage_key
     );
-        // balance for n-1 
-    let balance_commit_verified_storage = get_account_with_storage(
-        chain_id,
-        block_number,
-        contract_address,
-        balance_commit_1_storage_key
-    );
+    // If key value dosent exist in mapping (commit=>balance) then the oracle will reject
+    // therefore we might check mapping(commit=>bool) is true, but we can neglet it here
+    // as a false commitment wont match the sig, and a non mapped key will throw error
+
+   
     
     //------ Compose new balance -----------//
     // 1) decrypt balanceCommit for n-1 
     let iv = [0, 0, 0, 0];
     let nonce_1_derived_key = derive_key_from_signature(alice_signature_nonce_1);
+    let encrypted_balance = bytes_to_field(commit_1_verified_storage.values[0]);
     let decrypted_1_balance_commit = 
-        decrypt_balance(nonce_1_derived_key, balance_commit_verified_storage.storage[0]);
+        decrypt_balance(alice_signature_nonce_1, encrypted_balance);
     // 2) add receipt_amount to the decrypted balanceCommit for n-1 
     let new_balance = decrypted_1_balance_commit + receipt_amount;
     // 3) encrypt the new balance with sign(n)
@@ -84,17 +80,26 @@ fn main(
     let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
 
     let encrypted_final_balance = encrypted_fields[0];
+    // nullifier serve to prevent double spending of same state, we dont need to check
+    // storage value for it, this pass to bob. If nullifier already exist bob's proof will be 
+    // rejected in the smart contract
+    let nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
     
-   
     // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
-    (chain_id, block_number)
+    (
+        chain_id,
+        block_number, 
+        commit_1_verified_storage.block_hash, 
+        nullifier, // <---- nullifier for commit_2 
+        encrypted_final_balance // <-- balance destined for commit_2
+    )
 }
 
 // Define a larger key size that can accommodate the nibble conversion of a 32-byte key
 global LARGER_KEY_SIZE: u32 = 132; // 2 * 32 + 68 (extra space for prefix)
 
 // Derive a deterministic key from a signature
-fn derive_key_from_signature(signature: [u8; 64]) -> [Field; 4] {
+fn derive_key_from_signature(signature: [u8; 65]) -> [Field; 4] {
     let mut key = [0; 4];
     for i in 0..4 {
         let mut value: u64 = 0;
@@ -108,7 +113,7 @@ fn derive_key_from_signature(signature: [u8; 64]) -> [Field; 4] {
 
 fn decrypt_balance(
     // Signature data
-    signature: [u8; 64],
+    signature: [u8; 65],
     
     // Encrypted balance (field element)
     encrypted_balance: Field,
@@ -165,6 +170,15 @@ fn hex_bytes_to_ascii(hex_bytes: [u8; 65]) -> [u8; 132] {
     result
 }
 
+// Function to convert bytes to a Field value
+fn bytes_to_field(bytes: [u8; 32]) -> Field {
+    let mut result: Field = 0;
+    for i in 0..32 {
+        result = result * 256 + (bytes[i] as Field);
+    }
+    result
+}
+
 
 
 
@@ -181,26 +195,14 @@ fn test_storage_proof() {
     // contract_address to check - using the correct type
     let contract_address: Address = [0x52, 0xE2, 0xD6, 0x4b, 0x28, 0xC3, 0xFc, 0x99, 0xB7, 0x17, 0x90, 0xBF, 0x62, 0x23, 0xf6, 0xaA, 0x00, 0x44, 0x53, 0xb1];
     
-    // Storage key to check - using a smaller key size (16 bytes instead of 32)
-    let commit_1: Bytes32 = [
-        0xc2, 0x93, 0x1d, 0xa8, 0xf1, 0xd2, 0xaf, 0x04, 0x4d, 0xd9, 0xb7, 0x1e, 0xdd, 0xce, 0xa6, 0xcb,
-        0x93, 0x84, 0xa4, 0x29, 0x56, 0x76, 0x32, 0x32, 0x39, 0x06, 0x06, 0xea, 0x82, 0xc4, 0xf0, 0xe2
-    ];
-    
-    // Storage value to verify
-    let storage_value =  [
-           0x30,     0x76,     0x23,     0x85,     0x27,     0x4e,     0x24,     0x00,     0x6a,     0x2d,     0x7e,     0x01,     0x11,     0xcf,     0x63,     0xca, 
-    0xd1,     0x4a,     0x09,     0x2a,     0x34,     0x3d,     0x5a,     0xe5,     0x59,     0x79,     0x08,     0x4f,     0xee,     0xa1
-    ];
-
-     let alice_signature_nonce_1: [u8; 65] = [
+    let alice_signature_nonce_1: [u8; 65] = [
         0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
         0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
         0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
         0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
         0x1c
     ];
-     let alice_signature_nonce_2: [u8; 65] = [
+    let alice_signature_nonce_2: [u8; 65] = [
         0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
         0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
         0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
@@ -210,8 +212,14 @@ fn test_storage_proof() {
     
     let receipt_amount = 100;
     
-    let (chain_id, block_number) = main(alice_signature_nonce_1, chain_id, block_number, contract_address, storage_value, receipt_amount);  
-   
+    let (chain_id, block_number, block_hash) = main(
+        alice_signature_nonce_1, 
+        alice_signature_nonce_2, 
+        chain_id, 
+        block_number, 
+        contract_address, 
+        receipt_amount
+    );
 } 
 
 #[test]
