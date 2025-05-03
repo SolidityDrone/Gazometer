@@ -1,55 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, createPublicClient, http } from 'viem';
-import { mainnet, sepolia } from 'viem/chains';
+import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey } from 'viem';
+import { mainnet } from 'viem/chains';
 import { useAccount } from 'wagmi';
+import { Noir } from '@noir-lang/noir_js';
+import { UltraHonkBackend } from '@aztec/bb.js';
+import circuit from '@/public/circuits/alice_receipt.json';
 
-// Define the input type for Noir ZK proof
-type NoirProofInput = {
-    signature1: string;
-    signature2: string;
-    nonce1: number;
-    nonce2: number;
-    storageHash: string;
-    storageNodes: any; // Can be null for now
-    storage_leaf: string;
-    storageDepth: number;
-    storageValue: string;
-    storageKey: string;
-    chainId: number;
-    blockNumber: number;
-    gazometerAddress: string;
-    balanceCommitSlot: number;
-    address: string;
-    amount_to_receive: number;
-};
-
-// Define the refined input type for Noir ZK proof
-type RefinedNoirInput = {
-    alice_address: string[];
-    alice_signature_nonce1: string[];
-    alice_signature_nonce2: string[];
-    amount_to_receive: string;
-    balance_commitment_storage_depth: string;
-    balance_commitment_storage_hash: string[];
-    balance_commitment_storage_leaf: string[];
-    balance_commitment_storage_nodes: string[][];
-    balance_commitment_storage_key: string[];
-    balance_commitment_storage_value: string[];
-    bounded_encrypted_balance: string[];
-    commitments_storage_depth: string;
-    commitments_storage_hash: string[];
-    commitments_storage_leaf: string[];
-    commitments_storage_nodes: string[][];
-    contract_address: string[];
-    current_nonce: string;
-    next_nonce: string;
-    prev_commitment_value: string[];
-    prev_encrypted_balance_value: string[];
-};
+// Add type for the circuit
+interface NoirCircuit {
+    bytecode: string;
+    abi: any;
+    noir_version: string;
+    hash: number;
+}
 
 export default function SignPage() {
+    // Remove the useEffect and state variables for noir and backend
     const [nonce, setNonce] = useState('');
     const [amountToReceive, setAmountToReceive] = useState('');
     const [signature1, setSignature1] = useState('');
@@ -58,11 +26,18 @@ export default function SignPage() {
     const [recoveredAddress2, setRecoveredAddress2] = useState('');
     const [hash1, setHash1] = useState('');
     const [hash2, setHash2] = useState('');
+    const [messageHash1, setMessageHash1] = useState('');
+    const [messageHash2, setMessageHash2] = useState('');
     const [storageKey1, setStorageKey1] = useState('');
-    const [proofResult, setProofResult] = useState('');
-    const [noirInput, setNoirInput] = useState<NoirProofInput | null>(null);
-    const [refinedInput, setRefinedInput] = useState<RefinedNoirInput | null>(null);
+    const [pubKeyX1, setPubKeyX1] = useState('');
+    const [pubKeyY1, setPubKeyY1] = useState('');
+    const [pubKeyX2, setPubKeyX2] = useState('');
+    const [pubKeyY2, setPubKeyY2] = useState('');
+    const [isVerified1, setIsVerified1] = useState(false);
+    const [isVerified2, setIsVerified2] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [proof, setProof] = useState<string | null>(null);
+    const [isProving, setIsProving] = useState(false);
 
     // Get the user's address using wagmi's useAccount hook
     const { address } = useAccount();
@@ -74,11 +49,14 @@ export default function SignPage() {
             // Create wallet client with the user's wallet
             const client = createWalletClient({
                 chain: mainnet,
-                transport: custom(window.ethereum)
+                transport: custom(window.ethereum as any)
             });
 
             // Get the connected address
             const [address] = await client.getAddresses();
+
+            // Calculate message hash before signing
+            const messageHash = keccak256(stringToHex(message));
 
             // Sign the message
             const signature = await client.signMessage({
@@ -95,6 +73,23 @@ export default function SignPage() {
             // Calculate keccak256 hash of the signature
             const signatureHash = keccak256(stringToHex(signature));
 
+            // Recover the public key from the signature
+            const publicKey = await recoverPublicKey({
+                hash: messageHash,
+                signature: signature
+            });
+
+            // Extract x and y coordinates from the public key
+            const pubKeyX = publicKey.slice(4, 68); // Skip '0x04' and get x coordinate
+            const pubKeyY = publicKey.slice(68); // Get y coordinate
+
+            // Verify the public key by recovering it again from the signature
+            const publicKey2 = await recoverPublicKey({
+                hash: messageHash,
+                signature: signature
+            });
+            const isVerified = publicKey === publicKey2;
+
             let storageKey = '';
 
             // Only calculate storage key for the first signature
@@ -107,7 +102,7 @@ export default function SignPage() {
                 );
             }
 
-            return { signature, recoveredAddress, signatureHash, storageKey };
+            return { signature, recoveredAddress, signatureHash, storageKey, pubKeyX, pubKeyY, isVerified, messageHash };
         } catch (error) {
             console.error('Error signing message:', error);
             throw error;
@@ -116,126 +111,220 @@ export default function SignPage() {
         }
     };
 
-    const getProof = async (storageKey: string) => {
+    const generateProof = async () => {
+        if (!circuit) {
+            console.error('No circuit provided');
+            return;
+        }
+
         try {
-            setIsLoading(true);
+            setIsProving(true);
 
-            // Create a public client for Base Sepolia
-            const publicClient = createPublicClient({
-                chain: sepolia,
-                transport: http('https://gateway.tenderly.co/public/sepolia')
-            });
+            // Create the foreign call handler
+            const foreignCallHandler = async (name: string, inputs: string[] | any) => {
+                console.log('FOREIGN CALL HANDLER TRIGGERED:', { name, inputs });
+                try {
+                    // Convert inputs to the correct format
+                    let formattedInputs;
+                    if (Array.isArray(inputs)) {
+                        formattedInputs = inputs.map(input => {
+                            // Remove any extra '0x' prefixes
+                            const cleanInput = input.startsWith('0x0x') ? input.slice(2) : input;
+                            return cleanInput;
+                        });
+                    } else if (typeof inputs === 'object') {
+                        // Handle object inputs by converting to array
+                        formattedInputs = Object.values(inputs).flat();
+                    } else {
+                        throw new Error(`Unexpected inputs type: ${typeof inputs}`);
+                    }
 
-            // Ensure storage key is a proper hex string with 0x prefix
-            const formattedStorageKey = storageKey.startsWith('0x')
-                ? storageKey as `0x${string}`
-                : `0x${storageKey}` as `0x${string}`;
+                    console.log('Formatted inputs:', formattedInputs);
 
-            // Get the proof for the storage key
-            const proof = await publicClient.getProof({
-                address: '0x52E2D64b28C3Fc99B71790BF6223f6aA004453b1',
-                storageKeys: [formattedStorageKey]
-            });
+                    const response = await fetch('/api/oracle', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            jsonrpc: "2.0",
+                            method: "resolve_foreign_call",
+                            params: [{
+                                function: name,
+                                inputs: formattedInputs,
+                                session_id: 1,
+                                root_path: "",
+                                package_name: ""
+                            }],
+                            id: 1
+                        })
+                    });
 
-            // Convert any BigInt values in the proof to hex strings before stringifying
-            const safeProof = JSON.parse(JSON.stringify(proof, (_, value) => {
-                if (typeof value === 'bigint') {
-                    // Convert BigInt to hex string with 0x prefix
-                    return `0x${value.toString(16)}`;
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const jsonRPCResponse = await response.json();
+                    console.log('Oracle response:', jsonRPCResponse);
+
+                    if (!jsonRPCResponse.result || !jsonRPCResponse.result.values) {
+                        throw new Error('Invalid oracle response format');
+                    }
+
+                    // Ensure we return an array of strings
+                    const values = jsonRPCResponse.result.values;
+                    if (Array.isArray(values)) {
+                        return values.map(v => String(v));
+                    } else if (typeof values === 'string') {
+                        return [values];
+                    } else if (typeof values === 'number') {
+                        return [String(values)];
+                    } else if (typeof values === 'boolean') {
+                        return [String(values)];
+                    } else {
+                        throw new Error(`Unexpected oracle response type: ${typeof values}`);
+                    }
+                } catch (error: unknown) {
+                    console.error('Detailed oracle error:', error);
+                    if (error instanceof Error) {
+                        throw new Error(`Oracle call failed: ${error.message}`);
+                    }
+                    throw new Error('Oracle call failed with unknown error');
                 }
-                return value;
-            }));
-
-            return safeProof;
-        } catch (error) {
-            console.error('Error getting proof:', error);
-            return `Error: ${error instanceof Error ? error.message : String(error)}`;
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // Helper function to format hex array with specified length and padding
-    const formatHexArray = (hex: string | number | undefined | null, options: { length: number, pad: 'left' | 'right' }): string => {
-        // Handle undefined or null input
-        if (hex === undefined || hex === null) {
-            return '0x' + '0'.repeat(options.length * 2);
-        }
-
-        // Convert number to hex string if needed
-        const hexStr = typeof hex === 'number' ? hex.toString(16) : String(hex);
-
-        // Remove 0x prefix if present
-        const cleanHex = hexStr.startsWith('0x') ? hexStr.slice(2) : hexStr;
-
-        // Pad the hex string to the specified length
-        let paddedHex = cleanHex;
-        if (cleanHex.length < options.length * 2) {
-            const padding = '0'.repeat(options.length * 2 - cleanHex.length);
-            paddedHex = options.pad === 'left' ? padding + cleanHex : cleanHex + padding;
-        }
-
-        return `0x${paddedHex}`;
-    };
-
-    const prepareNoirInput = async (
-        sig1: string,
-        sig2: string,
-        hash1: string,
-        hash2: string,
-        nonce1: number,
-        nonce2: number,
-        proof: any
-    ) => {
-        try {
-            // Create a public client for Base Sepolia
-            const publicClient = createPublicClient({
-                chain: sepolia,
-                transport: http('https://gateway.tenderly.co/public/sepolia')
-            });
-
-            // Get the latest block number
-            const blockNumber = await publicClient.getBlockNumber();
-
-            // Extract storage proof information
-            const storageProof = proof.storageProof[0];
-            const value = storageProof.value;
-            const depth = storageProof.proof.length;
-            const key = storageProof.key;
-
-            // Get the storage nodes from the proof
-            const storageNodes = storageProof.proof;
-
-            // Get the leaf from the last node in the proof
-            const leaf = storageProof.proof[storageProof.proof.length - 1];
-
-            // Format the leaf with the specified length and padding
-            const storage_leaf = formatHexArray(leaf, { length: 69, pad: 'right' });
-
-            // Create the Noir input
-            const input: NoirProofInput = {
-                signature1: sig1,
-                signature2: sig2,
-                nonce1: nonce1,
-                nonce2: nonce2,
-                storageHash: proof.storageHash,
-                storageNodes: storageNodes, // Use the actual storage nodes from the proof
-                storage_leaf: storage_leaf,
-                storageDepth: storageNodes.length - 1,
-                storageValue: value,
-                storageKey: key,
-                chainId: sepolia.id,
-                blockNumber: Number(blockNumber),
-                gazometerAddress: '0x52E2D64b28C3Fc99B71790BF6223f6aA004453b1',
-                balanceCommitSlot: 2,
-                address: address || '0x0000000000000000000000000000000000000000',
-                amount_to_receive: parseFloat(amountToReceive) || 0,
             };
 
-            return input;
+            // Initialize Noir with the foreign call handler
+            const noir = new Noir(circuit as NoirCircuit);
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
+            (backend as any).oracle_hash = 'keccak';
+
+            // Get current block number and chain ID
+            const blockNumber = "8233877"; // You might want to get this from an API
+            const chainId = "11155111";    // Sepolia testnet chain ID
+
+            // Helper function to create a byte array of a specific length
+            const createByteArray = (length: number, value: string = "0x01") => {
+                return Array(length).fill(value);
+            };
+
+            // Helper function to convert hex string to byte array
+            const hexToBytes = (hex: string) => {
+                const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+                return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
+            };
+
+            // Test the foreign call handler first
+            try {
+                console.log('Testing foreign call handler...');
+                // Create more realistic test inputs
+                const testSignature = "0x" + "01".repeat(65); // 65 bytes of 0x01
+                const testPubKey = "0x" + "02".repeat(32); // 32 bytes of 0x02
+                const testContract = "0x" + "03".repeat(20); // 20 bytes of 0x03
+
+                const testInputs = {
+                    alice_signature_nonce_1: hexToBytes(testSignature),
+                    alice_signature_nonce_2: hexToBytes(testSignature),
+                    block_number: "8233877",
+                    chain_id: "11155111",
+                    contract_address: hexToBytes(testContract),
+                    message_nonce_1: 1,
+                    message_nonce_2: 2,
+                    pub_x_1: hexToBytes(testPubKey),
+                    pub_x_2: hexToBytes(testPubKey),
+                    pub_y_1: hexToBytes(testPubKey),
+                    pub_y_2: hexToBytes(testPubKey),
+                    receipt_amount: "1000000000000000000" // 1 ETH in wei
+                };
+
+                console.log('Test inputs:', JSON.stringify(testInputs, null, 2));
+                console.log('Test signature length:', testInputs.alice_signature_nonce_1.length);
+                console.log('Test pub key length:', testInputs.pub_x_1.length);
+                console.log('Test contract length:', testInputs.contract_address.length);
+
+                const testResult = await noir.execute(testInputs);
+                console.log('Test execution result:', testResult);
+            } catch (error) {
+                console.error('Test execution failed:', error);
+                if (error instanceof Error) {
+                    console.error('Test error stack:', error.stack);
+                }
+            }
+
+            // Convert all hex values to decimal numbers
+            const signature1Bytes = hexToBytes(signature1).map(byte => parseInt(byte.slice(2), 16));
+            const signature2Bytes = hexToBytes(signature2).map(byte => parseInt(byte.slice(2), 16));
+            const pubX1Bytes = hexToBytes(pubKeyX1).map(byte => parseInt(byte.slice(2), 16));
+            const pubX2Bytes = hexToBytes(pubKeyX2).map(byte => parseInt(byte.slice(2), 16));
+            const pubY1Bytes = hexToBytes(pubKeyY1).map(byte => parseInt(byte.slice(2), 16));
+            const pubY2Bytes = hexToBytes(pubKeyY2).map(byte => parseInt(byte.slice(2), 16));
+            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA").map(byte => parseInt(byte.slice(2), 16));
+
+            // Validate lengths
+            if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {
+                throw new Error('Signatures must be 65 bytes long');
+            }
+            if (pubX1Bytes.length !== 32 || pubX2Bytes.length !== 32 ||
+                pubY1Bytes.length !== 32 || pubY2Bytes.length !== 32) {
+                throw new Error('Public keys must be 32 bytes long');
+            }
+            if (contractAddressBytes.length !== 20) {
+                throw new Error('Contract address must be 20 bytes long');
+            }
+
+            const inputs = {
+                alice_signature_nonce_1: signature1Bytes,
+                alice_signature_nonce_2: signature2Bytes,
+                block_number: parseInt(blockNumber),
+                chain_id: parseInt(chainId),
+                contract_address: contractAddressBytes,
+                message_nonce_1: 1,
+                message_nonce_2: 2,
+                pub_x_1: pubX1Bytes,
+                pub_x_2: pubX2Bytes,
+                pub_y_1: pubY1Bytes,
+                pub_y_2: pubY2Bytes,
+                receipt_amount: parseInt(amountToReceive)
+            };
+
+            console.log('Starting proof generation with inputs:', JSON.stringify(inputs, null, 2));
+            console.log('Signature 1 length:', inputs.alice_signature_nonce_1.length);
+            console.log('Signature 2 length:', inputs.alice_signature_nonce_2.length);
+            console.log('Pub key X1 length:', inputs.pub_x_1.length);
+            console.log('Pub key Y1 length:', inputs.pub_y_1.length);
+            console.log('Contract address length:', inputs.contract_address.length);
+
+            // First execute the circuit to get the witness
+            console.log('Executing circuit with inputs...');
+            let witness;
+            try {
+                console.log('About to execute circuit...');
+                console.log('Noir instance:', noir);
+                console.log('Noir options:', (noir as any).options);
+
+                const result = await noir.execute(inputs);
+                console.log('Circuit execution result:', result);
+                witness = result.witness;
+                console.log('Generated witness:', witness);
+            } catch (error) {
+                console.error('Circuit execution error:', error);
+                if (error instanceof Error) {
+                    console.error('Error stack:', error.stack);
+                }
+                throw error;
+            }
+
+            // Then generate the proof using the backend
+            const proof = await backend.generateProof(witness);
+            setProof(proof.proof);
+
+            // Verify the proof
+            const isValid = await backend.verifyProof(proof);
+            console.log('Proof is', isValid ? 'valid' : 'invalid');
         } catch (error) {
-            console.error('Error preparing Noir input:', error);
-            throw error;
+            console.error('Error generating proof:', error);
+        } finally {
+            setIsProving(false);
         }
     };
 
@@ -249,6 +338,10 @@ export default function SignPage() {
             setSignature1(result1.signature);
             setRecoveredAddress1(result1.recoveredAddress);
             setHash1(result1.signatureHash);
+            setMessageHash1(result1.messageHash);
+            setPubKeyX1(result1.pubKeyX);
+            setPubKeyY1(result1.pubKeyY);
+            setIsVerified1(result1.isVerified);
 
             // Format the storage key to ensure it's a proper hex string
             const formattedStorageKey = result1.storageKey.startsWith('0x')
@@ -261,25 +354,10 @@ export default function SignPage() {
             setSignature2(result2.signature);
             setRecoveredAddress2(result2.recoveredAddress);
             setHash2(result2.signatureHash);
-
-            // Get proof for the storage key
-            if (formattedStorageKey) {
-                const proof = await getProof(formattedStorageKey);
-                setProofResult(JSON.stringify(proof, null, 2));
-
-                // Prepare Noir input
-                const noirInput = await prepareNoirInput(
-                    result1.signature,
-                    result2.signature,
-                    result1.signatureHash,
-                    result2.signatureHash,
-                    parseInt(nonce) - 1,
-                    parseInt(nonce),
-                    proof
-                );
-
-                setNoirInput(noirInput);
-            }
+            setMessageHash2(result2.messageHash);
+            setPubKeyX2(result2.pubKeyX);
+            setPubKeyY2(result2.pubKeyY);
+            setIsVerified2(result2.isVerified);
 
         } catch (error) {
             console.error('Error in form submission:', error);
@@ -288,277 +366,122 @@ export default function SignPage() {
         }
     };
 
-    const getRefinedInputs = () => {
-        if (!noirInput) return;
-
-        // Convert hex strings to byte arrays
-        const hexToBytes = (hex: string): string[] => {
-            // Remove 0x prefix if present
-            const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-            const bytes: string[] = [];
-
-            // Split into pairs of characters (bytes)
-            for (let i = 0; i < cleanHex.length; i += 2) {
-                bytes.push(`0x${cleanHex.slice(i, i + 2)}`);
-            }
-
-            return bytes;
-        };
-
-        // Convert address to byte array
-        const addressBytes = hexToBytes(noirInput.address);
-
-        // Convert signatures to byte arrays
-        const sig1Bytes = hexToBytes(noirInput.signature1);
-        const sig2Bytes = hexToBytes(noirInput.signature2);
-
-        // Convert storage hash to byte array
-        const storageHashBytes = hexToBytes(noirInput.storageHash);
-
-        // Convert storage leaf to byte array
-        const storageLeafBytes = hexToBytes(noirInput.storage_leaf);
-
-        // Convert storage key to byte array
-        const storageKeyBytes = hexToBytes(noirInput.storageKey);
-
-        // Convert storage value to byte array
-        const storageValueBytes = hexToBytes(noirInput.storageValue);
-
-        // Process storage nodes to ensure we have 7 arrays of the same length
-        const storageNodesBytes: string[][] = [];
-
-        // If we have storage nodes, process them
-        if (Array.isArray(noirInput.storageNodes) && noirInput.storageNodes.length > 0) {
-            // Process each node
-            noirInput.storageNodes.forEach((node: string) => {
-                storageNodesBytes.push(hexToBytes(node));
+    // Test function to make a direct oracle call
+    const testGetHeaderCall = async () => {
+        console.log('Testing direct oracle call...');
+        try {
+            const response = await fetch('/api/oracle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "resolve_foreign_call",
+                    params: [{
+                        function: "get_header",
+                        inputs: ["aa36a7", "7da395"], // chain_id and block_number
+                        session_id: 1,
+                        root_path: "",
+                        package_name: ""
+                    }],
+                    id: 1
+                })
             });
+            const data = await response.json();
+            console.log('Test response:', data);
+        } catch (error) {
+            console.error('Test error:', error);
         }
-
-        // Create a zero array of the specified length (532 bytes as per the error message)
-        const createZeroArray = (length: number): string[] => {
-            const zeroArray: string[] = [];
-            for (let i = 0; i < length; i++) {
-                zeroArray.push('0x00');
-            }
-            return zeroArray;
-        };
-
-        // Ensure we have exactly 7 arrays with 532 bytes each
-        while (storageNodesBytes.length < 7) {
-            storageNodesBytes.push(createZeroArray(532));
-        }
-
-        // Ensure each array has exactly 532 bytes
-        for (let i = 0; i < storageNodesBytes.length; i++) {
-            if (storageNodesBytes[i].length < 532) {
-                // Pad with zeros if needed
-                const padding = createZeroArray(532 - storageNodesBytes[i].length);
-                storageNodesBytes[i] = [...storageNodesBytes[i], ...padding];
-            } else if (storageNodesBytes[i].length > 532) {
-                // Truncate if too long
-                storageNodesBytes[i] = storageNodesBytes[i].slice(0, 532);
-            }
-        }
-
-        // Convert contract address to byte array
-        const contractAddressBytes = hexToBytes(noirInput.gazometerAddress);
-
-        // Create the refined input
-        const refined: RefinedNoirInput = {
-            alice_address: addressBytes,
-            alice_signature_nonce1: sig1Bytes,
-            alice_signature_nonce2: sig2Bytes,
-            amount_to_receive: noirInput.amount_to_receive.toString(),
-            balance_commitment_storage_depth: noirInput.storageDepth.toString(),
-            balance_commitment_storage_hash: storageHashBytes,
-            balance_commitment_storage_leaf: storageLeafBytes,
-            balance_commitment_storage_nodes: storageNodesBytes,
-            balance_commitment_storage_key: storageKeyBytes,
-            balance_commitment_storage_value: storageValueBytes,
-            bounded_encrypted_balance: [], // Placeholder
-            commitments_storage_depth: "0", // Placeholder
-            commitments_storage_hash: [], // Placeholder
-            commitments_storage_leaf: [], // Placeholder
-            commitments_storage_nodes: [], // Placeholder
-            contract_address: contractAddressBytes,
-            current_nonce: noirInput.nonce1.toString(),
-            next_nonce: noirInput.nonce2.toString(),
-            prev_commitment_value: [], // Placeholder
-            prev_encrypted_balance_value: [], // Placeholder
-        };
-
-        setRefinedInput(refined);
     };
 
-    // Custom JSON stringify function to format arrays in a more compact way
-    const customStringify = (obj: any): string => {
-        // First convert to JSON with our custom array formatting
-        const jsonString = JSON.stringify(obj, (key, value) => {
-            if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string' && value[0].startsWith('0x')) {
-                // Format byte arrays in a more compact way
-                return `[${value.join(', ')}]`;
-            }
-            return value;
-        }, 2);
-
-        // Now remove quotes and curly braces
-        return jsonString
-            .replace(/"([^"]+)":/g, '$1:') // Remove quotes from keys
-            .replace(/"([^"]+)"/g, '$1')   // Remove quotes from string values
-            .replace(/{\n/g, '')           // Remove opening curly braces
-            .replace(/\n}/g, '')           // Remove closing curly braces
-            .replace(/,\n/g, '\n')         // Remove trailing commas
-            .replace(/\[\n/g, '[')         // Remove opening brackets with newlines
-            .replace(/\n\]/g, ']');        // Remove closing brackets with newlines
-    };
-
-    // Custom function to format storage nodes for easy copy-paste into Noir
-    const formatStorageNodesForNoir = (nodes: string[][]): string => {
-        let result = 'let storage_nodes = [\n';
-
-        for (let i = 0; i < nodes.length; i++) {
-            result += '    [';
-
-            // Add each byte with proper formatting
-            for (let j = 0; j < nodes[i].length; j++) {
-                result += nodes[i][j];
-                if (j < nodes[i].length - 1) {
-                    result += ', ';
-                }
-
-                // Add line breaks for readability (every 16 bytes)
-                if ((j + 1) % 16 === 0 && j < nodes[i].length - 1) {
-                    result += '\n             ';
-                }
-            }
-
-            result += ']';
-            if (i < nodes.length - 1) {
-                result += ',\n';
-            } else {
-                result += '\n';
-            }
+    const testGetProof = async () => {
+        console.log('Testing get_proof call...');
+        try {
+            const response = await fetch('/api/oracle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "resolve_foreign_call",
+                    params: [{
+                        function: "get_proof",
+                        inputs: [
+                            "0000000000000000000000000000000000000000000000000000000000aa36a7",
+                            "00000000000000000000000000000000000000000000000000000000007da37e",
+                            [
+                                "0000000000000000000000000000000000000000000000000000000000000058",
+                                "000000000000000000000000000000000000000000000000000000000000002b",
+                                "00000000000000000000000000000000000000000000000000000000000000ee",
+                                "000000000000000000000000000000000000000000000000000000000000008f",
+                                "0000000000000000000000000000000000000000000000000000000000000043",
+                                "00000000000000000000000000000000000000000000000000000000000000bf",
+                                "0000000000000000000000000000000000000000000000000000000000000020",
+                                "0000000000000000000000000000000000000000000000000000000000000039",
+                                "0000000000000000000000000000000000000000000000000000000000000064",
+                                "00000000000000000000000000000000000000000000000000000000000000d3",
+                                "000000000000000000000000000000000000000000000000000000000000008c",
+                                "0000000000000000000000000000000000000000000000000000000000000054",
+                                "00000000000000000000000000000000000000000000000000000000000000fa",
+                                "0000000000000000000000000000000000000000000000000000000000000003",
+                                "00000000000000000000000000000000000000000000000000000000000000e6",
+                                "000000000000000000000000000000000000000000000000000000000000002d",
+                                "0000000000000000000000000000000000000000000000000000000000000061",
+                                "0000000000000000000000000000000000000000000000000000000000000061",
+                                "0000000000000000000000000000000000000000000000000000000000000059",
+                                "00000000000000000000000000000000000000000000000000000000000000fa"
+                            ],
+                            [
+                                "00000000000000000000000000000000000000000000000000000000000000db",
+                                "0000000000000000000000000000000000000000000000000000000000000063",
+                                "0000000000000000000000000000000000000000000000000000000000000031",
+                                "000000000000000000000000000000000000000000000000000000000000008f",
+                                "0000000000000000000000000000000000000000000000000000000000000009",
+                                "00000000000000000000000000000000000000000000000000000000000000a1",
+                                "00000000000000000000000000000000000000000000000000000000000000c8",
+                                "0000000000000000000000000000000000000000000000000000000000000029",
+                                "000000000000000000000000000000000000000000000000000000000000005b",
+                                "0000000000000000000000000000000000000000000000000000000000000061",
+                                "000000000000000000000000000000000000000000000000000000000000002f",
+                                "0000000000000000000000000000000000000000000000000000000000000039",
+                                "0000000000000000000000000000000000000000000000000000000000000069",
+                                "00000000000000000000000000000000000000000000000000000000000000bf",
+                                "0000000000000000000000000000000000000000000000000000000000000068",
+                                "0000000000000000000000000000000000000000000000000000000000000046",
+                                "0000000000000000000000000000000000000000000000000000000000000019",
+                                "00000000000000000000000000000000000000000000000000000000000000d1",
+                                "00000000000000000000000000000000000000000000000000000000000000b1",
+                                "000000000000000000000000000000000000000000000000000000000000002b",
+                                "00000000000000000000000000000000000000000000000000000000000000a2",
+                                "0000000000000000000000000000000000000000000000000000000000000081",
+                                "0000000000000000000000000000000000000000000000000000000000000010",
+                                "000000000000000000000000000000000000000000000000000000000000006e",
+                                "00000000000000000000000000000000000000000000000000000000000000cd",
+                                "000000000000000000000000000000000000000000000000000000000000004d",
+                                "00000000000000000000000000000000000000000000000000000000000000b7",
+                                "0000000000000000000000000000000000000000000000000000000000000014",
+                                "00000000000000000000000000000000000000000000000000000000000000e6",
+                                "000000000000000000000000000000000000000000000000000000000000003a",
+                                "0000000000000000000000000000000000000000000000000000000000000078",
+                                "0000000000000000000000000000000000000000000000000000000000000057"
+                            ]
+                        ],
+                        session_id: 1,
+                        root_path: "",
+                        package_name: ""
+                    }],
+                    id: 1
+                })
+            });
+            const data = await response.json();
+            console.log('Test response:', data);
+        } catch (error) {
+            console.error('Test error:', error);
         }
-
-        result += '];';
-        return result;
-    };
-
-    // Function to format storage nodes for easy copy-paste into Noir tests
-    const formatStorageNodesForNoirTest = (nodes: string[][]): string => {
-        let result = 'let storage_nodes = [\n';
-
-        for (let i = 0; i < nodes.length; i++) {
-            result += '    [\n';
-
-            // Add each byte with proper formatting
-            for (let j = 0; j < nodes[i].length; j++) {
-                result += `        0x${nodes[i][j].substring(2)}`;
-                if (j < nodes[i].length - 1) {
-                    result += ', ';
-                }
-
-                // Add line breaks for readability (every 16 bytes)
-                if ((j + 1) % 16 === 0 && j < nodes[i].length - 1) {
-                    result += '\n';
-                }
-            }
-
-            result += '\n    ]';
-            if (i < nodes.length - 1) {
-                result += ',\n';
-            } else {
-                result += '\n';
-            }
-        }
-
-        result += '];';
-        return result;
-    };
-
-    // Function to format a complete Noir test with all necessary components
-    const formatCompleteNoirTest = (input: RefinedNoirInput): string => {
-        let result = '// Complete Noir test format\n\n';
-
-        // Add key (using storage key)
-        result += 'let key = [\n';
-        for (let i = 0; i < input.balance_commitment_storage_key.length; i++) {
-            result += `    0x${input.balance_commitment_storage_key[i].substring(2)}`;
-            if (i < input.balance_commitment_storage_key.length - 1) {
-                result += ', ';
-            }
-            if ((i + 1) % 16 === 0 && i < input.balance_commitment_storage_key.length - 1) {
-                result += '\n';
-            }
-        }
-        result += '\n];\n\n';
-
-        // Add storage value
-        result += 'let storage_value = [\n';
-        for (let i = 0; i < input.balance_commitment_storage_value.length; i++) {
-            result += `    0x${input.balance_commitment_storage_value[i].substring(2)}`;
-            if (i < input.balance_commitment_storage_value.length - 1) {
-                result += ', ';
-            }
-            if ((i + 1) % 16 === 0 && i < input.balance_commitment_storage_value.length - 1) {
-                result += '\n';
-            }
-        }
-        result += '\n];\n\n';
-
-        // Add storage hash
-        result += 'let storage_hash = [\n';
-        for (let i = 0; i < input.balance_commitment_storage_hash.length; i++) {
-            result += `    0x${input.balance_commitment_storage_hash[i].substring(2)}`;
-            if (i < input.balance_commitment_storage_hash.length - 1) {
-                result += ', ';
-            }
-            if ((i + 1) % 16 === 0 && i < input.balance_commitment_storage_hash.length - 1) {
-                result += '\n';
-            }
-        }
-        result += '\n];\n\n';
-
-        // Add storage nodes
-        result += 'let storage_nodes = [\n';
-        for (let i = 0; i < input.balance_commitment_storage_nodes.length; i++) {
-            result += '    [\n';
-            for (let j = 0; j < input.balance_commitment_storage_nodes[i].length; j++) {
-                result += `        0x${input.balance_commitment_storage_nodes[i][j].substring(2)}`;
-                if (j < input.balance_commitment_storage_nodes[i].length - 1) {
-                    result += ', ';
-                }
-                if ((j + 1) % 16 === 0 && j < input.balance_commitment_storage_nodes[i].length - 1) {
-                    result += '\n';
-                }
-            }
-            result += '\n    ]';
-            if (i < input.balance_commitment_storage_nodes.length - 1) {
-                result += ',\n';
-            } else {
-                result += '\n';
-            }
-        }
-        result += '];\n\n';
-
-        // Add storage leaf
-        result += 'let storage_leaf = [\n';
-        for (let i = 0; i < input.balance_commitment_storage_leaf.length; i++) {
-            result += `    0x${input.balance_commitment_storage_leaf[i].substring(2)}`;
-            if (i < input.balance_commitment_storage_leaf.length - 1) {
-                result += ', ';
-            }
-            if ((i + 1) % 16 === 0 && i < input.balance_commitment_storage_leaf.length - 1) {
-                result += '\n';
-            }
-        }
-        result += '\n];\n\n';
-
-        // Add storage depth
-        result += `let storage_depth = ${parseInt(input.balance_commitment_storage_depth)};\n`;
-
-        return result;
     };
 
     return (
@@ -604,6 +527,9 @@ export default function SignPage() {
                             {signature1 || 'No signature yet'}
                         </div>
                         <div className="mt-2 text-sm text-black">
+                            Message Hash: {messageHash1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
                             Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
                         </div>
                         <div className="mt-2 text-sm text-black">
@@ -611,6 +537,15 @@ export default function SignPage() {
                         </div>
                         <div className="mt-2 text-sm text-black">
                             Storage Key: {storageKey1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key X: {pubKeyX1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key Y: {pubKeyY1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key Verified: {isVerified1 ? '✅' : '❌'}
                         </div>
                     </div>
 
@@ -622,10 +557,22 @@ export default function SignPage() {
                             {signature2 || 'No signature yet'}
                         </div>
                         <div className="mt-2 text-sm text-black">
+                            Message Hash: {messageHash2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
                             Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
                         </div>
                         <div className="mt-2 text-sm text-black">
                             Keccak256 Hash: {hash2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key X: {pubKeyX2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key Y: {pubKeyY2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-black">
+                            Public Key Verified: {isVerified2 ? '✅' : '❌'}
                         </div>
                     </div>
 
@@ -636,56 +583,43 @@ export default function SignPage() {
                     >
                         {isLoading ? 'Signing...' : 'Sign Messages'}
                     </button>
-                </form>
 
-                {proofResult && (
-                    <div className="mt-6">
-                        <h2 className="text-lg font-medium text-black mb-2">Proof Result</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {proofResult}
-                        </pre>
-                    </div>
-                )}
-
-                {noirInput && (
-                    <div className="mt-6">
-                        <h2 className="text-lg font-medium text-black mb-2">Noir ZK Proof Input</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {JSON.stringify(noirInput, null, 2)}
-                        </pre>
-
+                    {signature1 && signature2 && (
                         <button
-                            onClick={getRefinedInputs}
-                            className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            type="button"
+                            onClick={generateProof}
+                            disabled={isProving}
+                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                         >
-                            Get Refined Inputs
+                            {isProving ? 'Generating Proof...' : 'Generate Proof'}
                         </button>
-                    </div>
-                )}
+                    )}
 
-                {refinedInput && (
-                    <div className="mt-6">
-                        <h2 className="text-lg font-medium text-black mb-2">Refined Noir ZK Proof Input</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {customStringify(refinedInput)}
-                        </pre>
+                    <button
+                        type="button"
+                        onClick={testGetHeaderCall}
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                        Test Get Header
+                    </button>
 
-                        <h2 className="text-lg font-medium text-black mt-4 mb-2">Storage Nodes for Noir</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {formatStorageNodesForNoir(refinedInput.balance_commitment_storage_nodes)}
-                        </pre>
+                    <button
+                        type="button"
+                        onClick={testGetProof}
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mt-2"
+                    >
+                        Test Get Proof
+                    </button>
 
-                        <h2 className="text-lg font-medium text-black mt-4 mb-2">Storage Nodes for Noir Test</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {formatStorageNodesForNoirTest(refinedInput.balance_commitment_storage_nodes)}
-                        </pre>
-
-                        <h2 className="text-lg font-medium text-black mt-4 mb-2">Complete Noir Test Format</h2>
-                        <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                            {formatCompleteNoirTest(refinedInput)}
-                        </pre>
-                    </div>
-                )}
+                    {proof && (
+                        <div className="mt-4">
+                            <h2 className="text-lg font-medium text-black mb-2">Generated Proof</h2>
+                            <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
+                                {JSON.stringify(proof, null, 2)}
+                            </pre>
+                        </div>
+                    )}
+                </form>
             </div>
         </div>
     );

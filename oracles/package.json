@@ -24,6 +24,7 @@
   "license": "MIT",
   "dependencies": {
     "@ethereumjs/trie": "^6.2.0",
+    "@fastify/cors": "8.5.0",
     "@iarna/toml": "^2.2.5",
     "@noir-lang/backend_barretenberg": "0.30.0",
     "@noir-lang/noir_js": "0.30.0",

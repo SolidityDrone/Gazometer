@@ -1,7 +1,0 @@
-[package]
-name = "get_header"
-type = "bin"
-compiler_version = ">=1.0.0"
-
-[dependencies]
-ethereum = { path = "../lib" }

@@ -55,24 +55,27 @@ export function encodeValue(proof: Hex[]): string[] {
 type StorageProof = GetProofReturnType['storageProof'][number];
 
 export function encodeStorageProof(storageKey: Hex, storageProof: StorageProof): ForeignCallOutput {
+
+
   const key = padArray(
     encodeHex(keccak256(storageKey)),
     storageProofConfig.maxPrefixedKeyNibbleLen,
     ZERO_PAD_VALUE,
     'left'
   );
+  console.log("---storageKey PAD --");
 
-  console.log("---storageProof --");
-  console.log(storageProof);
 
   // For storage values, we need to use the raw hex value without RLP encoding
   // This ensures it's properly formatted as a bytes32 value
+  console.log("--Value", storageProof.value);
   const value = padArray(
-    encodeHex(toRlp(toHexString(storageProof.value))),
+    encodeHex(toHexString(storageProof.value)),
     storageProofConfig.maxValueLen,
     ZERO_PAD_VALUE,
     'left'
   );
+  console.log("---storageValue PAD --");
 
   // If the proof has only one node, we need to handle it differently
   // In this case, the first node is the leaf node, and there are no intermediate nodes

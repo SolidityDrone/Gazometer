@@ -1,2 +1,0 @@
-global ETHEREUM_MAINNET_ID: Field = 1;
-global ETHEREUM_SEPOLIA_ID: Field = 11155111;

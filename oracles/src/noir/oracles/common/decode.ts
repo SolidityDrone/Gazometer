@@ -38,6 +38,20 @@ function decodeHexValue(arg: string[]): Hex {
 }
 
 export function decodeField(arg: string): bigint {
-  assert(isHex(arg), `Field elements should be hexes: ${arg}`);
-  return BigInt(arg);
+  // If it's a hex string (starts with 0x)
+  if (arg.startsWith('0x')) {
+    return BigInt(arg);
+  }
+  // If it's a number or a string representing a number
+  if (!isNaN(Number(arg))) {
+    const num = Number(arg);
+    // Pad to 32 bytes (64 hex characters) and ensure it's lowercase
+    const hex = num.toString(16).toLowerCase().padStart(64, '0');
+    return BigInt(`0x${hex}`);
+  }
+  // If it's a hex string without 0x prefix
+  if (isHex(`0x${arg}`)) {
+    return BigInt(`0x${arg}`);
+  }
+  throw new Error(`Invalid field element: ${arg}`);
 }
