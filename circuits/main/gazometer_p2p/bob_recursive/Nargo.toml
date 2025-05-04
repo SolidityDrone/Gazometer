@@ -1,0 +1,13 @@
+[package]
+name = "bob_recursive"
+type = "bin"
+compiler_version = ">=0.30.0"
+
+[build]
+target-dir = "./target"
+
+[dependencies]
+ethereum = { path = "../../../ethereum/circuits/lib" }
+token = { path = "../../../ethereum/circuits/lib" }
+hydra = { path = "../../../lib/noir-hydra" }
+keccak256 = { path = "../../../lib/keccak256" }
