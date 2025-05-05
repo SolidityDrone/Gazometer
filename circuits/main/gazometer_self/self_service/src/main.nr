@@ -8,7 +8,7 @@ use dep::hydra::bn254::{enc, dec};
 use dep::keccak256::keccak256;
 
 
-// Alice sign nonce n & n-1
+// user sign nonce n & n-1
 // n-1 is hashed and check that keccak(sig(n-1))) exist in the storage of the contract
 // if it does, prove state of balanceCommit exist for that key(keccak(sig(n-1)))
 // use sig(n-1) to decrypt the balanceCommit of n-1 and save the value
@@ -47,16 +47,10 @@ fn compute_final_balance(
     is_addition: bool
 ) -> Field {
     let iv = [0, 0, 0, 0];
-    
-    println("---- BALANCE COMPUTATION ----");
-    println("Encrypted balance input:");
-    println(encrypted_balance);
-    
+
     // 1. Decrypt the balance using sig1
     let decrypted_balance = decrypt_balance(decrypt_signature, encrypted_balance);
-    println("Decrypted balance:");
-    println(decrypted_balance);
-    
+
     // 2. Apply amount operation (add or subtract)
     let new_balance = if is_addition {
         decrypted_balance + amount
@@ -67,40 +61,35 @@ fn compute_final_balance(
         assert(balance_u64 >= amount_u64, "Insufficient balance for withdrawal");
         decrypted_balance - amount
     };
-    println("New balance after operation:");
-    println(new_balance);
-    
+ 
     // 3. Encrypt the new balance using sig2
     let new_key = derive_key_from_signature(encrypt_signature);
     let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
     let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
-    
-    println("Final encrypted balance:");
-    println(encrypted_fields[0]);
-    println("---- END BALANCE COMPUTATION ----");
+
     
     encrypted_fields[0]
 }
 
 fn main(
-    alice_signature_nonce_1: [u8; 65],
-    alice_signature_nonce_2: [u8; 65],
+    user_signature_nonce_1: [u8; 65],
+    user_signature_nonce_2: [u8; 65],
     chain_id: pub Field,
-    block_number: pub u64,
+    block_number: u64,
     message_nonce_1: u64,
     message_nonce_2: u64,
     pub_x_1: [u8; 32],
     pub_y_1: [u8; 32],
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
-    contract_address: pub Address,
+    contract_address: Address,
     amount: pub Field,
-    is_deposit: pub bool,
-    receiver_address: pub Address
-) -> pub (Field, Field, Field, Field, Field) {
+    is_deposit: pub Field,
+    receiver_address: Address
+) -> pub (Field, Field, Field, Field, Field, Field, Field) {
     // Create 64-byte signatures
-    let sig_64_1 = create_64_byte_signature(alice_signature_nonce_1);
-    let sig_64_2 = create_64_byte_signature(alice_signature_nonce_2);
+    let sig_64_1 = create_64_byte_signature(user_signature_nonce_1);
+    let sig_64_2 = create_64_byte_signature(user_signature_nonce_2);
 
     // Compute hashed messages
     let hashed_message_1 = hash_u64(message_nonce_1);
@@ -113,13 +102,10 @@ fn main(
     }
 
     // Compute commitment hashes
-    let commit_1_hash = keccak256(hex_bytes_to_ascii(alice_signature_nonce_1), 132);
-    let commit_2_hash = keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132);
+    let commit_1_hash = keccak256(hex_bytes_to_ascii(user_signature_nonce_1), 132);
+    let commit_2_hash = keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132);
 
     // Initialize variables that will be used in both branches
-    let mut final_chain_id = chain_id;
-    let mut final_block_number = block_number as Field;
-    let mut final_contract_address = address_to_field(contract_address);
     let mut final_block_hash: Field = 0;
     let mut final_nullifier: [u8; 32] = [0; 32];
     let mut final_encrypted_balance: Field = 0;
@@ -128,12 +114,12 @@ fn main(
     // Handle initial state (message_nonce_1 == 0)
     if message_nonce_1 == 0 {
         // For initial state, we only allow deposits
-        assert(is_deposit, "Initial state only supports deposits");
+        assert(is_deposit == 1, "Initial state only supports deposits");
         
-        final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
+        final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132), 32);
         final_encrypted_balance = compute_final_balance(
-            alice_signature_nonce_2,  // For initial state, we use sig2 for both
-            alice_signature_nonce_2,  // For initial state, we use sig2 for both
+            user_signature_nonce_2,  // For initial state, we use sig2 for both
+            user_signature_nonce_2,  // For initial state, we use sig2 for both
             amount,
             amount,
             true  // Always add for initial deposit
@@ -158,27 +144,28 @@ fn main(
         // Compute final balance
         let encrypted_balance = safe_storage_to_field(commit_1_verified_storage.values[0]);
         final_encrypted_balance = compute_final_balance(
-            alice_signature_nonce_1,  // Use sig1 to decrypt
-            alice_signature_nonce_2,  // Use sig2 to encrypt
+            user_signature_nonce_1,  // Use sig1 to decrypt
+            user_signature_nonce_2,  // Use sig2 to encrypt
             encrypted_balance,
             amount,
-            is_deposit  // true for deposit (add), false for withdrawal (subtract)
+            is_deposit == 1  // 1 for deposit (add), 0 for withdrawal (subtract)
         );
 
         // Compute nullifier
-        final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
+        final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132), 32);
         final_block_hash = bytes_to_field(commit_1_verified_storage.block_hash);
         final_commit_hash = commit_2_hash;
     }
 
-    
-    // Return final state
+    // Return values in order matching _publicInputs array
     (
-        final_block_hash,
-        bytes_to_field(final_nullifier),
-        final_encrypted_balance,
-        bytes_to_field(final_commit_hash),
-        address_to_field(contract_address)
+        block_number as Field,       // _publicInputs[3]
+        final_block_hash,            // _publicInputs[4]
+        bytes_to_field(final_nullifier),  // _publicInputs[5]
+        final_encrypted_balance,     // _publicInputs[6]
+        bytes_to_field(final_commit_hash),  // _publicInputs[7]
+        address_to_field(contract_address),  // _publicInputs[8]
+        address_to_field(receiver_address)   // _publicInputs[9]
     )
 }
 
@@ -350,10 +337,10 @@ fn hash_u64(value: u64) -> [u8; 32] {
 #[test]
 fn test_hash_u64_values() {
     // Test with 1
-    let hash_1 = hash_u64(1);
+    let hash_1 = hash_u64(0);
     let expected_hash_1: [u8; 32] = [
-        0xc8, 0x9e, 0xfd, 0xaa, 0x54, 0xc0, 0xf2, 0x0c, 0x7a, 0xdf, 0x61, 0x28, 0x82, 0xdf, 0x09, 0x50,
-        0xf5, 0xa9, 0x51, 0x63, 0x7e, 0x03, 0x07, 0xcd, 0xcb, 0x4c, 0x67, 0x2f, 0x29, 0x8b, 0x8b, 0xc6
+        0x04, 0x48, 0x52, 0xb2, 0xa6, 0x70, 0xad, 0xe5, 0x40, 0x7e, 0x78, 0xfb, 0x28, 0x63, 0xc5, 0x1d,
+        0xe9, 0xfc, 0xb9, 0x65, 0x42, 0xa0, 0x71, 0x86, 0xfe, 0x3a, 0xed, 0xa6, 0xbb, 0x8a, 0x11, 0x6d
     ];
     assert(hash_1 == expected_hash_1);
     
@@ -391,22 +378,22 @@ fn test_shield() {
     let block_number = 8233854;
     
     // Message nonces
-    let message_nonce_1 = 1;
-    let message_nonce_2 = 2;
+    let message_nonce_1 = 0;
+    let message_nonce_2 = 0;
     
     // contract_address to check - using the correct type
     let contract_address: Address = [0x58, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
     let receiver_address: Address = [0x99, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
 
     // Signatures (65 bytes)
-    let alice_signature_nonce_1: [u8; 65] = [
-        0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
-        0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
-        0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
-        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0xd3,
-        0x1c
+    let user_signature_nonce_1: [u8; 65] = [
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
     ];
-    let alice_signature_nonce_2: [u8; 65] = [
+    let user_signature_nonce_2: [u8; 65] = [
         0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
         0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
         0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
@@ -416,12 +403,12 @@ fn test_shield() {
 
     // Public key coordinates
     let pub_x_1: [u8; 32] = [
-        0xca, 0xb1, 0x4a, 0x0b, 0xb5, 0x57, 0xdf, 0xe9, 0x0a, 0x26, 0x8d, 0xcd, 0x04, 0xf1, 0x7e, 0x2e,
-        0xa8, 0xd8, 0xcc, 0xd5, 0x57, 0x71, 0xaa, 0x18, 0xec, 0x72, 0x3a, 0xf2, 0xee, 0x45, 0x92, 0xe6
+        0x32, 0x5e, 0x66, 0xd2, 0x37, 0x77, 0x91, 0x44, 0x0c, 0xb7, 0xc5, 0xeb, 0xc2, 0x99, 0x2e, 0xa9,
+        0xcc, 0xc4, 0xb3, 0xcd, 0x2d, 0x64, 0x8e, 0x90, 0xa9, 0xeb, 0xa7, 0x4a, 0x5a, 0xc0, 0xc8, 0xa3
     ];
     let pub_y_1: [u8; 32] = [
-        0x75, 0xd4, 0x4b, 0xb8, 0xbc, 0x98, 0xdb, 0x93, 0x24, 0x0f, 0x48, 0x07, 0x7c, 0x63, 0xaa, 0x4b,
-        0x29, 0xd5, 0x9a, 0xa3, 0x35, 0xcf, 0xf4, 0xb2, 0xa0, 0x88, 0x23, 0x4f, 0x69, 0xc2, 0x2e, 0xba
+        0x29, 0x8b, 0x4e, 0x5f, 0xcd, 0x6e, 0x86, 0x61, 0x6c, 0x86, 0xb3, 0x07, 0x11, 0xc9, 0x89, 0xab,
+        0x6c, 0xa9, 0x88, 0x92, 0x90, 0xab, 0x8a, 0x0d, 0x2d, 0x01, 0x85, 0x1e, 0xdb, 0x1f, 0xbf, 0x52
     ];
 
     // Using same public key for both signatures
@@ -435,11 +422,11 @@ fn test_shield() {
     ];
     
     let amount = 100;
-    let is_deposit = false;  // Set to true for deposit, false for withdrawal
+    let is_deposit = 1;  // 1 for deposit, 0 for withdrawal
     
-    let (block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field) = main(
-        alice_signature_nonce_1, 
-        alice_signature_nonce_2, 
+    let (block_number, block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field, receiver_address_field) = main(
+        user_signature_nonce_1, 
+        user_signature_nonce_2, 
         chain_id, 
         block_number,
         message_nonce_1,
@@ -453,7 +440,10 @@ fn test_shield() {
         is_deposit,
         receiver_address
     );
+
     println("---- CIRCUIT OUTPUT ----");
+    println("block_number");
+    println(block_number);
     println("block_hash");
     println(block_hash);
     println("nullifier");
@@ -464,6 +454,8 @@ fn test_shield() {
     println(commit_hash);
     println("contract_address");
     println(contract_address_field);
+    println("receiver_address");
+    println(receiver_address_field);
     println("---- END OF CIRCUIT OUTPUT ----");
 }
 
@@ -518,7 +510,7 @@ fn test_hex_literal_hashing() {
 
 #[test]
 fn test_encryption() {
-    let alice_signature_nonce_1: [u8; 65] = [
+    let user_signature_nonce_1: [u8; 65] = [
         0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
         0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
         0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
@@ -527,7 +519,7 @@ fn test_encryption() {
     ];
 
     // Derive key from signature
-    let key = derive_key_from_signature(alice_signature_nonce_1);
+    let key = derive_key_from_signature(user_signature_nonce_1);
     println("Derived key:");
     println(key);
 
@@ -548,7 +540,7 @@ fn test_encryption() {
     
     let mock_encrypted_field: Field = 0x2eeabfd4c857e8331ed5eb0f233289420796d442d022d4bdae600f7909d6a356;
     
-    let decrypted_value = decrypt_balance(alice_signature_nonce_1, mock_encrypted_field);
+    let decrypted_value = decrypt_balance(user_signature_nonce_1, mock_encrypted_field);
     println("Decrypted value:");
     println(decrypted_value);
 
