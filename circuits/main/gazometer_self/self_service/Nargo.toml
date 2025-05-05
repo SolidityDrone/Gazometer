@@ -1,5 +1,5 @@
 [package]
-name = "alice_receipt"
+name = "self_service"
 type = "bin"
 compiler_version = ">=0.30.0"
 

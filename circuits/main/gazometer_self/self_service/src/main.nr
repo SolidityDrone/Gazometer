@@ -86,17 +86,18 @@ fn main(
     alice_signature_nonce_1: [u8; 65],
     alice_signature_nonce_2: [u8; 65],
     chain_id: pub Field,
-    block_number: u64,
+    block_number: pub u64,
     message_nonce_1: u64,
     message_nonce_2: u64,
     pub_x_1: [u8; 32],
     pub_y_1: [u8; 32],
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
-    contract_address: Address,
+    contract_address: pub Address,
     amount: pub Field,
-    is_deposit: bool,  // true for deposit, false for withdrawal
-) -> pub (Field, Field, Field, Field, Field, Field, Field, Field) {
+    is_deposit: pub bool,
+    receiver_address: pub Address
+) -> pub (Field, Field, Field, Field, Field) {
     // Create 64-byte signatures
     let sig_64_1 = create_64_byte_signature(alice_signature_nonce_1);
     let sig_64_2 = create_64_byte_signature(alice_signature_nonce_2);
@@ -123,7 +124,6 @@ fn main(
     let mut final_nullifier: [u8; 32] = [0; 32];
     let mut final_encrypted_balance: Field = 0;
     let mut final_commit_hash: [u8; 32] = [0; 32];
-    let mut final_amount = amount;
 
     // Handle initial state (message_nonce_1 == 0)
     if message_nonce_1 == 0 {
@@ -174,14 +174,11 @@ fn main(
     
     // Return final state
     (
-        final_chain_id,
-        final_block_number,
-        final_contract_address,
         final_block_hash,
         bytes_to_field(final_nullifier),
         final_encrypted_balance,
         bytes_to_field(final_commit_hash),
-        final_amount
+        address_to_field(contract_address)
     )
 }
 
@@ -399,7 +396,8 @@ fn test_shield() {
     
     // contract_address to check - using the correct type
     let contract_address: Address = [0x58, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
-    
+    let receiver_address: Address = [0x99, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
+
     // Signatures (65 bytes)
     let alice_signature_nonce_1: [u8; 65] = [
         0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
@@ -437,9 +435,9 @@ fn test_shield() {
     ];
     
     let amount = 100;
-    let is_deposit = true;  // Set to true for deposit, false for withdrawal
+    let is_deposit = false;  // Set to true for deposit, false for withdrawal
     
-    let (chain_id, block_number, contract_address, block_hash, nullifier, encrypted_balance, commit_2_hash, amount) = main(
+    let (block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field) = main(
         alice_signature_nonce_1, 
         alice_signature_nonce_2, 
         chain_id, 
@@ -452,25 +450,20 @@ fn test_shield() {
         pub_y_2,
         contract_address, 
         amount,
-        is_deposit
+        is_deposit,
+        receiver_address
     );
     println("---- CIRCUIT OUTPUT ----");
-    println("chain_id");
-    println(chain_id);
-    println("block_number");
-    println(block_number);
-    println("contract_address");
-    println(contract_address);
     println("block_hash");
     println(block_hash);
     println("nullifier");
     println(nullifier);
     println("encrypted_balance");
     println(encrypted_balance);
-    println("commit_2_hash");
-    println(commit_2_hash);
-    println("amount");
-    println(amount);
+    println("commit_hash");
+    println(commit_hash);
+    println("contract_address");
+    println(contract_address_field);
     println("---- END OF CIRCUIT OUTPUT ----");
 }
 
