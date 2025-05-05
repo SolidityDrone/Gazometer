@@ -148,7 +148,7 @@ export default function SelfServicePage() {
                 chain_id: "11155111", // Sepolia chain ID
                 block_number: currentBlock.toString(),
                 message_nonce_1: Number(nonce) - 1,
-                message_nonce_2: nonce,
+                message_nonce_2: Number(nonce),
                 pub_x_1: pubX1Bytes,
                 pub_y_1: pubY1Bytes,
                 pub_x_2: pubX2Bytes,
@@ -448,11 +448,13 @@ export default function SelfServicePage() {
                     )}
 
                     {proof && (
-                        <div className="mt-4">
-                            <h2 className="text-lg font-medium text-black mb-2">Generated Proof</h2>
-                            <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                                {proof}
-                            </pre>
+                        <div className="mt-4 p-4 bg-green-50 rounded-md">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                <p className="ml-2 text-sm font-medium text-green-800">Proof generated and verified successfully!</p>
+                            </div>
                         </div>
                     )}
                 </form>
