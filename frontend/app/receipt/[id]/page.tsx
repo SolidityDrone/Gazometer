@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { UltraHonkBackend } from '@aztec/bb.js';
-import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey } from 'viem';
-import { mainnet } from 'viem/chains';
+import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, formatUnits, http } from 'viem';
+import { mainnet, sepolia } from 'viem/chains';
 import { useAccount } from 'wagmi';
 import alice_circuit from '@/public/circuits/alice_receipt.json';
 import bob_circuit from '@/public/circuits/bob_recursive.json';
@@ -57,10 +57,10 @@ export default function ReceiptPage() {
     const [isVerified1, setIsVerified1] = useState(false);
     const [isVerified2, setIsVerified2] = useState(false);
     const [nonce, setNonce] = useState('');
-    const [amountToReceive, setAmountToReceive] = useState('');
+    const [amountToSend, setAmountToSend] = useState('');
 
     const [isProving, setIsProving] = useState(false);
-    const [bobProof, setBobProof] = useState<string | null>(null);
+    const [proofSuccess, setProofSuccess] = useState(false);
 
     // Helper function to convert hex string to byte array
     const hexToBytes = (hex: string) => {
@@ -76,6 +76,16 @@ export default function ReceiptPage() {
         if (storedProof) {
             const proof = JSON.parse(storedProof);
             setStoredProofData(proof);
+
+            // Set amount to send from Alice's proof data
+            if (proof.alice_proof && proof.alice_proof.publicInputs) {
+                // The amount is in the public inputs array
+                const amountHex = proof.alice_proof.publicInputs[9]; // Assuming amount is at index 9
+                // Convert from hex to wei, then format to ether
+                const amountInWei = BigInt(amountHex);
+                const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
+                setAmountToSend(amountInEth);
+            }
 
             // Extract and set signature data
             if (proof.alice_proof) {
@@ -95,7 +105,6 @@ export default function ReceiptPage() {
                 setIsVerified1(proof.alice_proof.isVerified1 || false);
                 setIsVerified2(proof.alice_proof.isVerified2 || false);
                 setNonce(proof.alice_proof.nonce || '');
-                setAmountToReceive(proof.alice_proof.amountToReceive || '');
             }
         }
     }, [params.id]);
@@ -251,6 +260,7 @@ export default function ReceiptPage() {
 
         try {
             setIsProving(true);
+            setProofSuccess(false);
             console.log('Starting Bob proof generation...');
 
             // Helper function to convert hex string to byte array
@@ -394,18 +404,19 @@ export default function ReceiptPage() {
 
             // Map values from storedProofData
             console.log('Mapping values from storedProofData...');
+            //@ts-ignore
             storedProofData.vkAsFields.forEach((value, index) => {
                 if (index < verification_key.length) {
                     verification_key[index] = value;
                 }
             });
-
+            //@ts-ignore
             storedProofData.proofAsFields.forEach((value, index) => {
                 if (index < proof.length) {
                     proof[index] = value;
                 }
             });
-
+            //@ts-ignore
             storedProofData.alice_proof.publicInputs.forEach((value, index) => {
                 if (index < public_inputs.length) {
                     public_inputs[index] = value;
@@ -419,6 +430,13 @@ export default function ReceiptPage() {
             });
             const vkHash = "0x" + "0".repeat(64);
 
+            // Get the current block number using public client
+            const publicClient = createPublicClient({
+                chain: sepolia,
+                transport: http() // Use Sepolia RPC endpoint
+            });
+            const currentBlock = await publicClient.getBlockNumber();
+            console.log("current block", currentBlock);
 
             const inputs = {
                 verification_key,
@@ -428,9 +446,9 @@ export default function ReceiptPage() {
                 bob_signature_nonce_1: signature1Bytes,
                 bob_signature_nonce_2: signature2Bytes,
                 chain_id: 11155111,
-                block_number: 8233877,
-                message_nonce_1: 1,
-                message_nonce_2: 2,
+                block_number: currentBlock.toString(),
+                message_nonce_1: Number(nonce) - 1,
+                message_nonce_2: Number(nonce),
                 pub_x_1: pubX1Bytes,
                 pub_x_2: pubX2Bytes,
                 pub_y_1: pubY1Bytes,
@@ -458,7 +476,7 @@ export default function ReceiptPage() {
             const isVerified = await backend.verifyProof(bob_proof);
             console.log('Proof verification result:', isVerified);
 
-            setBobProof(JSON.stringify(bob_proof, null, 2));
+            setProofSuccess(true);
 
         } catch (error) {
             console.error('Error generating proof:', error);
@@ -467,6 +485,7 @@ export default function ReceiptPage() {
             } else {
                 setError('Unknown error occurred');
             }
+            setProofSuccess(false);
         } finally {
             setIsProving(false);
         }
@@ -508,6 +527,15 @@ export default function ReceiptPage() {
                 {/* Bob's Signing Section */}
                 <div className="border-t pt-6">
                     <h2 className="text-lg font-medium text-black mb-4">Bob's Signatures</h2>
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-black">
+                            Amount to Send (Ethers)
+                        </label>
+                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
+                            {amountToSend || 'Loading...'}
+                        </div>
+                    </div>
+
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
                             <label htmlFor="nonce" className="block text-sm font-medium text-black">
@@ -519,20 +547,6 @@ export default function ReceiptPage() {
                                 value={nonce}
                                 onChange={(e) => setNonce(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="amount_to_receive" className="block text-sm font-medium text-black">
-                                Amount to Receive
-                            </label>
-                            <input
-                                type="number"
-                                id="amount_to_receive"
-                                value={amountToReceive}
-                                onChange={(e) => setAmountToReceive(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                                step="0.000000000000000001"
                             />
                         </div>
 
@@ -614,12 +628,9 @@ export default function ReceiptPage() {
                         </button>
                     )}
 
-                    {bobProof && (
-                        <div className="mt-4">
-                            <h2 className="text-lg font-medium text-black mb-2">Generated Bob's Proof</h2>
-                            <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                                {bobProof}
-                            </pre>
+                    {proofSuccess && (
+                        <div className="mt-4 p-4 bg-green-50 rounded-md">
+                            <p className="text-sm text-green-700">✅ Proof generated and verified successfully!</p>
                         </div>
                     )}
                 </div>

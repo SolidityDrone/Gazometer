@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
-import { mainnet, sepolia } from 'viem/chains';
+import { sepolia } from 'viem/chains';
 import { useAccount } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
-import circuit from '@/public/circuits/alice_receipt.json';
+import circuit from '@/public/circuits/self_service.json';
 
 // Add type for the circuit
 interface NoirCircuit {
@@ -16,8 +16,8 @@ interface NoirCircuit {
     hash: number;
 }
 
-// Add this function at the top level, before the SignPage component
-function proofToFields(bytes) {
+// Add this function at the top level, before the InitializePage component
+function proofToFields(bytes: Uint8Array): string[] {
     const fields = [];
     for (let i = 0; i < bytes.length; i += 32) {
         const fieldBytes = new Uint8Array(32);
@@ -30,11 +30,14 @@ function proofToFields(bytes) {
     return fields.map((field) => "0x" + field.toString("hex"));
 }
 
+// Helper function to convert hex string to byte array
+const hexToBytes = (hex: string) => {
+    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+    return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
+};
 
-export default function SignPage() {
-    // Remove the useEffect and state variables for noir and backend
-    const [nonce, setNonce] = useState('');
-    const [amountToReceive, setAmountToReceive] = useState('');
+export default function InitializePage() {
+    const [amount, setAmount] = useState('');
     const [signature1, setSignature1] = useState('');
     const [signature2, setSignature2] = useState('');
     const [recoveredAddress1, setRecoveredAddress1] = useState('');
@@ -43,7 +46,6 @@ export default function SignPage() {
     const [hash2, setHash2] = useState('');
     const [messageHash1, setMessageHash1] = useState('');
     const [messageHash2, setMessageHash2] = useState('');
-    const [storageKey1, setStorageKey1] = useState('');
     const [pubKeyX1, setPubKeyX1] = useState('');
     const [pubKeyY1, setPubKeyY1] = useState('');
     const [pubKeyX2, setPubKeyX2] = useState('');
@@ -106,19 +108,7 @@ export default function SignPage() {
             });
             const isVerified = publicKey === publicKey2;
 
-            let storageKey = '';
-
-            // Only calculate storage key for the first signature
-            if (isFirstSignature) {
-                // Calculate storage key using balance slot 2
-                // Convert BigInt to hex string properly
-                const balanceSlotHex = `0x${BigInt(2).toString(16).padStart(64, '0')}`;
-                storageKey = keccak256(
-                    concat([signatureHash, balanceSlotHex as `0x${string}`])
-                );
-            }
-
-            return { signature, recoveredAddress, signatureHash, storageKey, pubKeyX, pubKeyY, isVerified, messageHash };
+            return { signature, recoveredAddress, signatureHash, pubKeyX, pubKeyY, isVerified, messageHash };
         } catch (error) {
             console.error('Error signing message:', error);
             throw error;
@@ -128,19 +118,63 @@ export default function SignPage() {
     };
 
     const generateProof = async () => {
-        if (!circuit) {
-            console.error('No circuit provided');
-            return;
-        }
-
         try {
             setIsProving(true);
+            setError(null);
 
-            // Helper function to convert hex string to byte array
-            const hexToBytes = (hex: string) => {
-                const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-                return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
+            // Get the current block number using public client
+            const publicClient = createPublicClient({
+                chain: sepolia,
+                transport: http()
+            });
+            const currentBlock = await publicClient.getBlockNumber();
+
+            // Contract address
+            const contractAddress = "0x582BEE8f43BF203964d38c54FA03e62d616159fA";
+
+            // Convert signatures to bytes
+            const signature1Bytes = hexToBytes(signature1);
+            const signature2Bytes = hexToBytes(signature2);
+
+            // Convert public keys to bytes
+            const pubX1Bytes = hexToBytes(pubKeyX1);
+            const pubX2Bytes = hexToBytes(pubKeyX2);
+            const pubY1Bytes = hexToBytes(pubKeyY1);
+            const pubY2Bytes = hexToBytes(pubKeyY2);
+
+            // Convert contract address to bytes
+            const contractAddressBytes = hexToBytes(contractAddress);
+
+            // Validate lengths
+            if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {
+                throw new Error('Invalid signature length');
+            }
+            if (pubX1Bytes.length !== 32 || pubX2Bytes.length !== 32 ||
+                pubY1Bytes.length !== 32 || pubY2Bytes.length !== 32) {
+                throw new Error('Invalid public key length');
+            }
+            if (contractAddressBytes.length !== 20) {
+                throw new Error('Invalid contract address length');
+            }
+
+            const inputs = {
+                user_signature_nonce_1: signature1Bytes,
+                user_signature_nonce_2: signature2Bytes,
+                chain_id: "11155111", // Sepolia chain ID
+                block_number: currentBlock.toString(),
+                message_nonce_1: "0",
+                message_nonce_2: "0",
+                pub_x_1: pubX1Bytes,
+                pub_y_1: pubY1Bytes,
+                pub_x_2: pubX2Bytes,
+                pub_y_2: pubY2Bytes,
+                contract_address: contractAddressBytes,
+                amount: amount, // 1 ETH in wei
+                is_deposit: "1",
+                receiver_address: contractAddressBytes
             };
+
+            console.log("inputs", inputs);
 
             // Create the foreign call handler
             const foreignCallHandler = async (name: string, inputs: string[] | any) => {
@@ -237,54 +271,6 @@ export default function SignPage() {
                 }
             };
 
-            // Convert all hex values to byte arrays
-            const signature1Bytes = hexToBytes(signature1);
-            const signature2Bytes = hexToBytes(signature2);
-            const pubX1Bytes = hexToBytes(pubKeyX1);
-            const pubX2Bytes = hexToBytes(pubKeyX2);
-            const pubY1Bytes = hexToBytes(pubKeyY1);
-            const pubY2Bytes = hexToBytes(pubKeyY2);
-            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA");
-
-            // Validate lengths
-            if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {
-                throw new Error('Signatures must be 65 bytes long');
-            }
-            if (pubX1Bytes.length !== 32 || pubX2Bytes.length !== 32 ||
-                pubY1Bytes.length !== 32 || pubY2Bytes.length !== 32) {
-                throw new Error('Public keys must be 32 bytes long');
-            }
-            if (contractAddressBytes.length !== 20) {
-                throw new Error('Contract address must be 20 bytes long');
-            }
-
-
-            // Get the current block number using public client
-            const publicClient = createPublicClient({
-                chain: sepolia,
-                transport: http() // Use Sepolia RPC endpoint
-            });
-            const currentBlock = await publicClient.getBlockNumber();
-            console.log("current block", currentBlock);
-
-
-            const inputs = {
-                alice_signature_nonce_1: signature1Bytes,
-                alice_signature_nonce_2: signature2Bytes,
-                block_number: currentBlock.toString(),
-                chain_id: 11155111,
-                contract_address: contractAddressBytes,
-                message_nonce_1: Number(nonce) - 1,
-                message_nonce_2: Number(nonce),
-                pub_x_1: pubX1Bytes,
-                pub_x_2: pubX2Bytes,
-                pub_y_1: pubY1Bytes,
-                pub_y_2: pubY2Bytes,
-                receipt_amount: amountToReceive
-            };
-
-            console.log('Inputs:', inputs);
-
             // Initialize Noir and backend
             const noir = new Noir(circuit as NoirCircuit);
             const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
@@ -293,50 +279,15 @@ export default function SignPage() {
             const { witness } = await noir.execute(inputs, foreignCallHandler);
             console.log('Circuit execution result:', witness);
 
-            const alice_proof = await backend.generateProof(witness);
-            console.log('Generated proof:', alice_proof);
-            console.log("proof", await backend.verifyProof(alice_proof));
+            const init_proof = await backend.generateProof(witness);
+            console.log('Generated proof:', init_proof);
+            console.log("proof", await backend.verifyProof(init_proof));
 
-            const { vkAsFields } = await backend.generateRecursiveProofArtifacts(
-                alice_proof.proof,
-                10,
-            );
-
-
-            console.log("vkAsFields generatged");
-
-            const publicInputElements = 10;
-
-            const proofAsFields = [...alice_proof.publicInputs.slice(publicInputElements), ...proofToFields(alice_proof.proof)];
-            console.log("proof field length", proofAsFields.length);
-
-            console.log("proofAsFields generated");
-
-            const proofData = {
-                alice_proof,
-                vkAsFields,
-                proofAsFields
-            };
-
-            setProof(JSON.stringify(proofData, null, 2));
-
-            // Generate a unique ID for this proof
-            const proofId = Math.random().toString(36).substring(2, 15);
-
-            // Store proof data in localStorage
-            localStorage.setItem(`proof_${proofId}`, JSON.stringify(proofData));
-
-            // Generate receipt link with just the ID
-            const receiptLink = `${window.location.origin}/receipt/${proofId}`;
-            setReceiptLink(receiptLink);
+            setProof(JSON.stringify(init_proof, null, 2));
 
         } catch (error) {
             console.error('Error generating proof:', error);
-            if (error instanceof Error) {
-                setError(error.message);
-            } else {
-                setError('Unknown error occurred');
-            }
+            setError(error instanceof Error ? error.message : 'Failed to generate proof');
         } finally {
             setIsProving(false);
         }
@@ -347,31 +298,24 @@ export default function SignPage() {
         try {
             setIsLoading(true);
 
-            // Sign message for nonce - 1
-            const result1 = await handleSign(`${parseInt(nonce) - 1}`, true);
-            setSignature1(result1.signature);
-            setRecoveredAddress1(result1.recoveredAddress);
-            setHash1(result1.signatureHash);
-            setMessageHash1(result1.messageHash);
-            setPubKeyX1(result1.pubKeyX);
-            setPubKeyY1(result1.pubKeyY);
-            setIsVerified1(result1.isVerified);
+            // Sign message for nonce 0
+            const result = await handleSign('0', true);
+            setSignature1(result.signature);
+            setRecoveredAddress1(result.recoveredAddress);
+            setHash1(result.signatureHash);
+            setMessageHash1(result.messageHash);
+            setPubKeyX1(result.pubKeyX);
+            setPubKeyY1(result.pubKeyY);
+            setIsVerified1(result.isVerified);
 
-            // Format the storage key to ensure it's a proper hex string
-            const formattedStorageKey = result1.storageKey.startsWith('0x')
-                ? result1.storageKey
-                : `0x${result1.storageKey}`;
-            setStorageKey1(formattedStorageKey);
-
-            // Sign message for nonce
-            const result2 = await handleSign(nonce, false);
-            setSignature2(result2.signature);
-            setRecoveredAddress2(result2.recoveredAddress);
-            setHash2(result2.signatureHash);
-            setMessageHash2(result2.messageHash);
-            setPubKeyX2(result2.pubKeyX);
-            setPubKeyY2(result2.pubKeyY);
-            setIsVerified2(result2.isVerified);
+            // Use the same signature and public key for the second input
+            setSignature2(result.signature);
+            setRecoveredAddress2(result.recoveredAddress);
+            setHash2(result.signatureHash);
+            setMessageHash2(result.messageHash);
+            setPubKeyX2(result.pubKeyX);
+            setPubKeyY2(result.pubKeyY);
+            setIsVerified2(result.isVerified);
 
         } catch (error) {
             console.error('Error in form submission:', error);
@@ -383,92 +327,34 @@ export default function SignPage() {
     return (
         <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-black">Message Signing Form</h1>
+                <h1 className="text-2xl font-bold mb-6 text-center text-black">Initialize Account</h1>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label htmlFor="nonce" className="block text-sm font-medium text-black">
-                            Nonce
+                        <label htmlFor="amount" className="block text-sm font-medium text-black">
+                            Amount
                         </label>
                         <input
                             type="number"
-                            id="nonce"
-                            value={nonce}
-                            onChange={(e) => setNonce(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                            required
-                        />
-                    </div>
-
-                    <div>
-                        <label htmlFor="amount_to_receive" className="block text-sm font-medium text-black">
-                            Amount to Receive
-                        </label>
-                        <input
-                            type="number"
-                            id="amount_to_receive"
-                            value={amountToReceive}
-                            onChange={(e) => setAmountToReceive(e.target.value)}
+                            id="amount"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
                             required
                             step="0.000000000000000001"
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-black">
-                            Signature 1 (for nonce - 1)
-                        </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                            {signature1 || 'No signature yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Message Hash: {messageHash1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Keccak256 Hash: {hash1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Storage Key: {storageKey1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key X: {pubKeyX1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Y: {pubKeyY1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Verified: {isVerified1 ? '✅' : '❌'}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-black">
-                            Signature 2 (for nonce)
-                        </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                            {signature2 || 'No signature yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Message Hash: {messageHash2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Keccak256 Hash: {hash2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key X: {pubKeyX2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Y: {pubKeyY2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Verified: {isVerified2 ? '✅' : '❌'}
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="text-lg font-medium">Signature (Nonce 0)</h3>
+                            <p className="text-sm text-gray-500">Signature: {signature1 || 'No signature yet'}</p>
+                            <p className="text-sm text-gray-500">Recovered Address: {recoveredAddress1 || 'Not recovered yet'}</p>
+                            <p className="text-sm text-gray-500">Hash: {hash1 || 'No hash yet'}</p>
+                            <p className="text-sm text-gray-500">Message Hash: {messageHash1 || 'No message hash yet'}</p>
+                            <p className="text-sm text-gray-500">Public Key X: {pubKeyX1 || 'No public key yet'}</p>
+                            <p className="text-sm text-gray-500">Public Key Y: {pubKeyY1 || 'No public key yet'}</p>
+                            <p className="text-sm text-gray-500">Verified: {isVerified1 ? 'Yes' : 'No'}</p>
                         </div>
                     </div>
 
@@ -477,26 +363,27 @@ export default function SignPage() {
                         disabled={isLoading}
                         className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                     >
-                        {isLoading ? 'Signing...' : 'Sign Messages'}
+                        {isLoading ? 'Signing...' : 'Sign Message'}
                     </button>
 
-                    {signature1 && signature2 && (
+                    {signature1 && (
                         <button
-                            type="button"
                             onClick={generateProof}
                             disabled={isProving}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
                         >
                             {isProving ? 'Generating Proof...' : 'Generate Proof'}
                         </button>
                     )}
 
                     {proof && (
-                        <div className="mt-4">
-                            <h2 className="text-lg font-medium text-black mb-2">Generated Proof</h2>
-                            <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
-                                {JSON.stringify(proof, null, 2)}
-                            </pre>
+                        <div className="mt-4 p-4 bg-green-50 rounded-md">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                <p className="ml-2 text-sm font-medium text-green-800">Proof generated and verified successfully!</p>
+                            </div>
                         </div>
                     )}
                 </form>

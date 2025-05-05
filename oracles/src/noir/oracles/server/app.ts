@@ -68,19 +68,11 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
     let addressBytes;
     if (Array.isArray(addressInput)) {
-      // If it's already an array, extract the last byte from each element
+      // If it's already an array, convert each decimal number to hex string
       addressBytes = addressInput.map(byte => {
-        // Convert to string and remove any whitespace
-        const byteStr = String(byte).trim();
-
-        // If the byte already has 0x prefix, just return it
-        if (byteStr.startsWith('0x')) {
-          // Extract the last two characters (one byte) from the hex string
-          return '0x' + byteStr.slice(-2);
-        }
-
-        // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byteStr.slice(-2);
+        // Convert decimal to hex and ensure it's two digits
+        const hexStr = Number(byte).toString(16).padStart(2, '0');
+        return '0x' + hexStr;
       });
 
       // Ensure we have exactly 20 bytes
@@ -98,17 +90,17 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
     } else if (typeof addressInput === 'string' && addressInput.includes(',')) {
       // If it's a comma-separated string, split it
       addressBytes = addressInput.split(',').map(byte => {
-        // Convert to string and remove any whitespace
-        const byteStr = String(byte).trim();
+        // Remove any whitespace
+        byte = byte.trim();
 
         // If the byte already has 0x prefix, just return it
-        if (byteStr.startsWith('0x')) {
+        if (byte.startsWith('0x')) {
           // Extract the last two characters (one byte) from the hex string
-          return '0x' + byteStr.slice(-2);
+          return '0x' + byte.slice(-2);
         }
 
         // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byteStr.slice(-2);
+        return '0x' + byte.slice(-2);
       });
 
       // Ensure we have exactly 20 bytes
@@ -189,19 +181,11 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
     let addressBytes;
     if (Array.isArray(addressInput)) {
-      // If it's already an array, extract the last byte from each element
+      // If it's already an array, convert each decimal number to hex string
       addressBytes = addressInput.map(byte => {
-        // Convert to string and remove any whitespace
-        const byteStr = String(byte).trim();
-
-        // If the byte already has 0x prefix, just return it
-        if (byteStr.startsWith('0x')) {
-          // Extract the last two characters (one byte) from the hex string
-          return '0x' + byteStr.slice(-2);
-        }
-
-        // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byteStr.slice(-2);
+        // Convert decimal to hex and ensure it's two digits
+        const hexStr = Number(byte).toString(16).padStart(2, '0');
+        return '0x' + hexStr;
       });
 
       // Ensure we have exactly 20 bytes
@@ -219,17 +203,17 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
     } else if (typeof addressInput === 'string' && addressInput.includes(',')) {
       // If it's a comma-separated string, split it
       addressBytes = addressInput.split(',').map(byte => {
-        // Convert to string and remove any whitespace
-        const byteStr = String(byte).trim();
+        // Remove any whitespace
+        byte = byte.trim();
 
         // If the byte already has 0x prefix, just return it
-        if (byteStr.startsWith('0x')) {
+        if (byte.startsWith('0x')) {
           // Extract the last two characters (one byte) from the hex string
-          return '0x' + byteStr.slice(-2);
+          return '0x' + byte.slice(-2);
         }
 
         // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byteStr.slice(-2);
+        return '0x' + byte.slice(-2);
       });
 
       // Ensure we have exactly 20 bytes
@@ -261,24 +245,12 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
       let storageKeyBytes;
       if (Array.isArray(storageKeyInput)) {
-
-        // If it's already an array, extract the last byte from each 32-byte hex string
+        // If it's already an array, convert each decimal number to hex string
         storageKeyBytes = storageKeyInput.map(byte => {
-
-          // Convert to string and remove any whitespace
-          const byteStr = String(byte).trim();
-
-          // If the byte already has 0x prefix, just return it
-          if (byteStr.startsWith('0x')) {
-            // Extract the last two characters (one byte) from the hex string
-            return '0x' + byteStr.slice(-2);
-          }
-
-          // Otherwise, add 0x prefix and extract the last two characters
-          return '0x' + byteStr.slice(-2);
+          // Convert decimal to hex and ensure it's two digits
+          const hexStr = Number(byte).toString(16).padStart(2, '0');
+          return '0x' + hexStr;
         });
-
-        console.log("CODDIO", storageKeyBytes)
 
         // Ensure we have exactly 32 bytes
         if (storageKeyBytes.length !== 32) {
@@ -295,22 +267,22 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
       } else if (typeof storageKeyInput === 'string' && storageKeyInput.includes(',')) {
         // If it's a comma-separated string, split it
         storageKeyBytes = storageKeyInput.split(',').map(byte => {
-          // Convert to string and remove any whitespace
-          const byteStr = String(byte).trim();
+          // Remove any whitespace
+          byte = byte.trim();
 
           // If the byte already has 0x prefix, just return it
-          if (byteStr.startsWith('0x')) {
+          if (byte.startsWith('0x')) {
             // Extract the last two characters (one byte) from the hex string
-            return '0x' + byteStr.slice(-2);
+            return '0x' + byte.slice(-2);
           }
 
           // Otherwise, add 0x prefix and extract the last two characters
-          return '0x' + byteStr.slice(-2);
+          return '0x' + byte.slice(-2);
         });
 
         // Ensure we have exactly 32 bytes
         if (storageKeyBytes.length !== 32) {
-
+          console.log(`Warning: Storage key has ${storageKeyBytes.length} bytes, expected 32`);
           // If we have more than 32 bytes, take only the first 32
           if (storageKeyBytes.length > 32) {
             storageKeyBytes = storageKeyBytes.slice(0, 32);
