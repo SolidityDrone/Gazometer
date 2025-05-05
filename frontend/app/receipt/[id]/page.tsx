@@ -492,148 +492,118 @@ export default function ReceiptPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-black">Receipt Verification</h1>
+        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
+                <h1 className="text-2xl font-bold mb-6 text-center text-white">Receipt Details</h1>
 
                 {error && (
-                    <div className="mt-4 p-4 bg-red-50 rounded-md">
-                        <p className="text-sm text-red-700">{error}</p>
+                    <div className="mb-4 p-4 border border-red-500 bg-red-900/50 text-white">
+                        {error}
                     </div>
                 )}
 
-                {/* Alice's Proof Verification */}
-                <div className="mb-6">
-                    <h2 className="text-lg font-medium text-black mb-4">Alice's Proof Verification</h2>
-                    <button
-                        onClick={verifyAliceProof}
-                        disabled={isVerifying}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                    >
-                        {isVerifying ? 'Verifying...' : 'Verify Alice\'s Proof'}
-                    </button>
-
-                    {isValidAlice !== null && !isVerifying && (
-                        <div className="mt-4">
-                            <div className={`p-4 rounded-md ${isValidAlice ? 'bg-green-50' : 'bg-red-50'}`}>
-                                <p className={`text-sm ${isValidAlice ? 'text-green-700' : 'text-red-700'}`}>
-                                    Alice's Proof: {isValidAlice ? '✅ Valid' : '❌ Invalid'}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Bob's Signing Section */}
-                <div className="border-t pt-6">
-                    <h2 className="text-lg font-medium text-black mb-4">Bob's Signatures</h2>
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-black">
-                            Amount to Send (Ethers)
-                        </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                            {amountToSend || 'Loading...'}
-                        </div>
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                {receipt && (
+                    <div className="space-y-4">
                         <div>
-                            <label htmlFor="nonce" className="block text-sm font-medium text-black">
-                                Nonce
+                            <label className="block text-sm font-medium text-white">
+                                Chain ID
                             </label>
-                            <input
-                                type="number"
-                                id="nonce"
-                                value={nonce}
-                                onChange={(e) => setNonce(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                            />
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                        >
-                            {isLoading ? 'Signing...' : 'Sign Messages'}
-                        </button>
-                    </form>
-
-                    <div className="mt-6 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-black">
-                                Signature 1 (for nonce - 1)
-                            </label>
-                            <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                                {signature1 || 'No signature yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Message Hash: {messageHash1 || 'Not calculated yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Keccak256 Hash: {hash1 || 'Not calculated yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Storage Key: {storageKey1 || 'Not calculated yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key X: {pubKeyX1 || 'Not calculated yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key Y: {pubKeyY1 || 'Not calculated yet'}
-                            </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key Verified: {isVerified1 ? '✅' : '❌'}
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.chain_id}
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-black">
-                                Signature 2 (for nonce)
+                            <label className="block text-sm font-medium text-white">
+                                Receipt Amount
                             </label>
-                            <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                                {signature2 || 'No signature yet'}
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.receipt_amount}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Message Hash: {messageHash2 || 'Not calculated yet'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Public Key X1
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.pub_x_1}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Public Key X2
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.pub_x_2}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Keccak256 Hash: {hash2 || 'Not calculated yet'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Public Key Y1
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.pub_y_1}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key X: {pubKeyX2 || 'Not calculated yet'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Public Key Y2
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.pub_y_2}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key Y: {pubKeyY2 || 'Not calculated yet'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Signature Nonce 1
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.alice_signature_nonce_1}
                             </div>
-                            <div className="mt-2 text-sm text-black">
-                                Public Key Verified: {isVerified2 ? '✅' : '❌'}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Signature Nonce 2
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.alice_signature_nonce_2}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Signature 1
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.alice_signature_1}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Signature 2
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.alice_signature_2}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white">
+                                Proof
+                            </label>
+                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
+                                {receipt.proof}
                             </div>
                         </div>
                     </div>
-
-                    {signature1 && signature2 && (
-                        <button
-                            onClick={generateBobProof}
-                            disabled={isProving}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                        >
-                            {isProving ? 'Generating Proof...' : 'Generate Bob\'s Proof'}
-                        </button>
-                    )}
-
-                    {proofSuccess && (
-                        <div className="mt-4 p-4 bg-green-50 rounded-md">
-                            <p className="text-sm text-green-700">✅ Proof generated and verified successfully!</p>
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
         </div>
     );

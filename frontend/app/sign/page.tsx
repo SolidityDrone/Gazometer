@@ -381,13 +381,13 @@ export default function SignPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-black">Message Signing Form</h1>
+        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
+                <h1 className="text-2xl font-bold mb-6 text-center text-white">Message Signing Form</h1>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label htmlFor="nonce" className="block text-sm font-medium text-black">
+                        <label htmlFor="nonce" className="block text-sm font-medium text-white">
                             Nonce
                         </label>
                         <input
@@ -395,13 +395,13 @@ export default function SignPage() {
                             id="nonce"
                             value={nonce}
                             onChange={(e) => setNonce(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
+                            className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                             required
                         />
                     </div>
 
                     <div>
-                        <label htmlFor="amount_to_receive" className="block text-sm font-medium text-black">
+                        <label htmlFor="amount_to_receive" className="block text-sm font-medium text-white">
                             Amount to Receive
                         </label>
                         <input
@@ -409,65 +409,65 @@ export default function SignPage() {
                             id="amount_to_receive"
                             value={amountToReceive}
                             onChange={(e) => setAmountToReceive(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
+                            className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                             required
                             step="0.000000000000000001"
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-black">
+                        <label className="block text-sm font-medium text-white">
                             Signature 1 (for nonce - 1)
                         </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
+                        <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
                             {signature1 || 'No signature yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Message Hash: {messageHash1 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Keccak256 Hash: {hash1 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Storage Key: {storageKey1 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key X: {pubKeyX1 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key Y: {pubKeyY1 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key Verified: {isVerified1 ? '✅' : '❌'}
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-black">
+                        <label className="block text-sm font-medium text-white">
                             Signature 2 (for nonce)
                         </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
+                        <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
                             {signature2 || 'No signature yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Message Hash: {messageHash2 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Keccak256 Hash: {hash2 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key X: {pubKeyX2 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key Y: {pubKeyY2 || 'Not calculated yet'}
                         </div>
-                        <div className="mt-2 text-sm text-black">
+                        <div className="mt-2 text-sm text-gray-300">
                             Public Key Verified: {isVerified2 ? '✅' : '❌'}
                         </div>
                     </div>
@@ -475,7 +475,7 @@ export default function SignPage() {
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                     >
                         {isLoading ? 'Signing...' : 'Sign Messages'}
                     </button>
@@ -485,7 +485,7 @@ export default function SignPage() {
                             type="button"
                             onClick={generateProof}
                             disabled={isProving}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                         >
                             {isProving ? 'Generating Proof...' : 'Generate Proof'}
                         </button>
@@ -493,8 +493,8 @@ export default function SignPage() {
 
                     {proof && (
                         <div className="mt-4">
-                            <h2 className="text-lg font-medium text-black mb-2">Generated Proof</h2>
-                            <pre className="p-4 bg-gray-50 rounded-md overflow-auto text-xs text-black">
+                            <h2 className="text-lg font-medium text-white mb-2">Generated Proof</h2>
+                            <pre className="p-4 border border-green-500 bg-gray-800 overflow-auto text-xs text-white">
                                 {JSON.stringify(proof, null, 2)}
                             </pre>
                         </div>
@@ -503,16 +503,16 @@ export default function SignPage() {
             </div>
 
             {receiptLink && (
-                <div className="mt-8 max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                    <h2 className="text-lg font-medium text-black mb-2">Receipt Link Generated</h2>
-                    <div className="p-4 bg-gray-50 rounded-md">
-                        <p className="text-sm text-gray-600">A receipt link has been generated. Click the button below to copy it.</p>
+                <div className="mt-8 max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
+                    <h2 className="text-lg font-medium text-white mb-2">Receipt Link Generated</h2>
+                    <div className="p-4 border border-green-500 bg-gray-800">
+                        <p className="text-sm text-gray-300">A receipt link has been generated. Click the button below to copy it.</p>
                         <button
                             onClick={() => {
                                 navigator.clipboard.writeText(receiptLink);
                                 alert('Link copied to clipboard!');
                             }}
-                            className="mt-2 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            className="mt-2 w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                         >
                             Copy Receipt Link
                         </button>

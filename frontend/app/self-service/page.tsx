@@ -311,43 +311,19 @@ export default function SelfServicePage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-black">Self Service</h1>
+        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
+                <h1 className="text-2xl font-bold mb-6 text-center text-white">Self Service</h1>
+
+                {error && (
+                    <div className="mt-4 p-4 bg-red-900/50 rounded-md">
+                        <p className="text-sm text-red-300">{error}</p>
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label htmlFor="nonce" className="block text-sm font-medium text-black">
-                            Nonce
-                        </label>
-                        <input
-                            type="number"
-                            id="nonce"
-                            value={nonce}
-                            onChange={(e) => setNonce(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                            required
-                            min="1"
-                        />
-                    </div>
-
-                    <div>
-                        <label htmlFor="receiver" className="block text-sm font-medium text-black">
-                            Receiver Address
-                        </label>
-                        <input
-                            type="text"
-                            id="receiver"
-                            value={receiverAddress}
-                            onChange={(e) => setReceiverAddress(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
-                            required
-                            placeholder="0x..."
-                        />
-                    </div>
-
-                    <div>
-                        <label htmlFor="amount" className="block text-sm font-medium text-black">
+                        <label htmlFor="amount" className="block text-sm font-medium text-white">
                             Amount
                         </label>
                         <input
@@ -355,116 +331,59 @@ export default function SelfServicePage() {
                             id="amount"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-black"
+                            className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                             required
                             step="0.000000000000000001"
                         />
                     </div>
 
-                    <div className="flex items-center">
-                        <input
-                            type="checkbox"
-                            id="isDeposit"
-                            checked={isDeposit}
-                            onChange={(e) => setIsDeposit(e.target.checked)}
-                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="isDeposit" className="ml-2 block text-sm text-black">
-                            Deposit (uncheck for withdrawal)
-                        </label>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-black">
-                            Signature 1
-                        </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                            {signature1 || 'No signature yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Message Hash: {messageHash1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Keccak256 Hash: {hash1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key X: {pubKeyX1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Y: {pubKeyY1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Verified: {isVerified1 ? '✅' : '❌'}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-black">
-                            Signature 2
-                        </label>
-                        <div className="mt-1 p-2 bg-gray-50 rounded-md text-black">
-                            {signature2 || 'No signature yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Message Hash: {messageHash2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Keccak256 Hash: {hash2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key X: {pubKeyX2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Y: {pubKeyY2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-black">
-                            Public Key Verified: {isVerified2 ? '✅' : '❌'}
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="text-lg font-medium text-white">Signature (Nonce 0)</h3>
+                            <p className="text-sm text-gray-300">Signature: {signature1 || 'No signature yet'}</p>
+                            <p className="text-sm text-gray-300">Recovered Address: {recoveredAddress1 || 'Not recovered yet'}</p>
+                            <p className="text-sm text-gray-300">Hash: {hash1 || 'No hash yet'}</p>
+                            <p className="text-sm text-gray-300">Message Hash: {messageHash1 || 'No message hash yet'}</p>
+                            <p className="text-sm text-gray-300">Public Key X: {pubKeyX1 || 'No public key yet'}</p>
+                            <p className="text-sm text-gray-300">Public Key Y: {pubKeyY1 || 'No public key yet'}</p>
+                            <p className="text-sm text-gray-300">Verified: {isVerified1 ? 'Yes' : 'No'}</p>
                         </div>
                     </div>
 
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                     >
-                        {isLoading ? 'Signing...' : 'Sign Messages'}
+                        {isLoading ? 'Signing...' : 'Sign Message'}
                     </button>
 
-                    {signature1 && signature2 && (
+                    {signature1 && (
                         <button
-                            type="button"
                             onClick={generateProof}
                             disabled={isProving}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                         >
                             {isProving ? 'Generating Proof...' : 'Generate Proof'}
                         </button>
                     )}
 
                     {proof && (
-                        <div className="mt-4 p-4 bg-green-50 rounded-md">
-                            <div className="flex items-center">
-                                <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                </svg>
-                                <p className="ml-2 text-sm font-medium text-green-800">Proof generated and verified successfully!</p>
-                            </div>
+                        <div className="mt-4">
+                            <h2 className="text-lg font-medium text-white mb-2">Generated Proof</h2>
+                            <pre className="p-4 border border-green-500 bg-gray-800 overflow-auto text-xs text-white">
+                                {JSON.stringify(proof, null, 2)}
+                            </pre>
                         </div>
                     )}
                 </form>
             </div>
 
             {receiptLink && (
-                <div className="mt-8 max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
-                    <h2 className="text-lg font-medium text-black mb-2">Receipt Link Generated</h2>
-                    <div className="p-4 bg-gray-50 rounded-md">
-                        <p className="text-sm text-gray-600">A receipt link has been generated. Click the button below to copy it.</p>
+                <div className="mt-8 max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm rounded-lg shadow-md p-6">
+                    <h2 className="text-lg font-medium text-white mb-2">Receipt Link Generated</h2>
+                    <div className="p-4 bg-gray-800 rounded-md">
+                        <p className="text-sm text-gray-300">A receipt link has been generated. Click the button below to copy it.</p>
                         <button
                             onClick={() => {
                                 navigator.clipboard.writeText(receiptLink);
