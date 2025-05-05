@@ -40,26 +40,44 @@ fn compute_storage_key(commit_hash: [u8; 32], balance_commit_slot: u8) -> [u8; 3
 
 // Helper function to compute final balance
 fn compute_final_balance(
-    signature: [u8; 65],
+    decrypt_signature: [u8; 65],  // Signature to decrypt with (sig1)
+    encrypt_signature: [u8; 65],  // Signature to encrypt with (sig2)
     encrypted_balance: Field,
-    amount_in: Field,
+    amount: Field,
     is_addition: bool
 ) -> Field {
     let iv = [0, 0, 0, 0];
-    let nonce_derived_key = derive_key_from_signature(signature);
-    let decrypted_balance = decrypt_balance(signature, encrypted_balance);
     
-    // Apply amount_in operation (add or subtract)
+    println("---- BALANCE COMPUTATION ----");
+    println("Encrypted balance input:");
+    println(encrypted_balance);
+    
+    // 1. Decrypt the balance using sig1
+    let decrypted_balance = decrypt_balance(decrypt_signature, encrypted_balance);
+    println("Decrypted balance:");
+    println(decrypted_balance);
+    
+    // 2. Apply amount operation (add or subtract)
     let new_balance = if is_addition {
-        decrypted_balance + amount_in
+        decrypted_balance + amount
     } else {
-        decrypted_balance - amount_in
+        // For withdrawals, ensure we have enough balance
+        let balance_u64 = decrypted_balance as u64;
+        let amount_u64 = amount as u64;
+        assert(balance_u64 >= amount_u64, "Insufficient balance for withdrawal");
+        decrypted_balance - amount
     };
+    println("New balance after operation:");
+    println(new_balance);
     
-    // Encrypt the new balance
-    let new_key = derive_key_from_signature(signature);
+    // 3. Encrypt the new balance using sig2
+    let new_key = derive_key_from_signature(encrypt_signature);
     let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
     let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
+    
+    println("Final encrypted balance:");
+    println(encrypted_fields[0]);
+    println("---- END BALANCE COMPUTATION ----");
     
     encrypted_fields[0]
 }
@@ -114,7 +132,8 @@ fn main(
         
         final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
         final_encrypted_balance = compute_final_balance(
-            alice_signature_nonce_2,
+            alice_signature_nonce_2,  // For initial state, we use sig2 for both
+            alice_signature_nonce_2,  // For initial state, we use sig2 for both
             amount,
             amount,
             true  // Always add for initial deposit
@@ -139,7 +158,8 @@ fn main(
         // Compute final balance
         let encrypted_balance = safe_storage_to_field(commit_1_verified_storage.values[0]);
         final_encrypted_balance = compute_final_balance(
-            alice_signature_nonce_2,
+            alice_signature_nonce_1,  // Use sig1 to decrypt
+            alice_signature_nonce_2,  // Use sig2 to encrypt
             encrypted_balance,
             amount,
             is_deposit  // true for deposit (add), false for withdrawal (subtract)
@@ -151,6 +171,7 @@ fn main(
         final_commit_hash = commit_2_hash;
     }
 
+    
     // Return final state
     (
         final_chain_id,
@@ -365,7 +386,7 @@ fn test_hash_u64_values() {
 }
 
 #[test]
-fn test_storage_proof() {
+fn test_shield() {
     // Chain ID for Sepolia testnet
     let chain_id = 11155111;
     
