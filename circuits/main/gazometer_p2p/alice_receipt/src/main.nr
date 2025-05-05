@@ -375,7 +375,7 @@ fn test_storage_proof() {
         0xfc, 0xd0, 0x3f, 0xe0, 0x17, 0xd2, 0x6c, 0xb2, 0xb4, 0xcd, 0xd4, 0x63, 0xbf, 0x7b, 0x9a, 0xf2
     ];
     
-    let receipt_amount = 100;
+    let receipt_amount = 1;
     
     let (chain_id, block_number, contract_address, block_hash, nullifier, encrypted_balance, commit_2_hash, receipt_amount) = main(
         alice_signature_nonce_1, 
