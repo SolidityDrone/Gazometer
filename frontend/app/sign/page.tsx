@@ -16,6 +16,21 @@ interface NoirCircuit {
     hash: number;
 }
 
+// Add this function at the top level, before the SignPage component
+function proofToFields(bytes) {
+    const fields = [];
+    for (let i = 0; i < bytes.length; i += 32) {
+        const fieldBytes = new Uint8Array(32);
+        const end = Math.min(i + 32, bytes.length);
+        for (let j = 0; j < end - i; j++) {
+            fieldBytes[j] = bytes[i + j];
+        }
+        fields.push(Buffer.from(fieldBytes));
+    }
+    return fields.map((field) => "0x" + field.toString("hex"));
+}
+
+
 export default function SignPage() {
     // Remove the useEffect and state variables for noir and backend
     const [nonce, setNonce] = useState('');
@@ -38,8 +53,9 @@ export default function SignPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [proof, setProof] = useState<string | null>(null);
     const [isProving, setIsProving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [receiptLink, setReceiptLink] = useState<string | null>(null);
 
-    // Get the user's address using wagmi's useAccount hook
     const { address } = useAccount();
 
     const handleSign = async (message: string, isFirstSignature: boolean) => {
@@ -120,6 +136,12 @@ export default function SignPage() {
         try {
             setIsProving(true);
 
+            // Helper function to convert hex string to byte array
+            const hexToBytes = (hex: string) => {
+                const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+                return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
+            };
+
             // Create the foreign call handler
             const foreignCallHandler = async (name: string, inputs: string[] | any) => {
                 console.log('FOREIGN CALL HANDLER TRIGGERED:', { name, inputs });
@@ -128,9 +150,35 @@ export default function SignPage() {
                     let formattedInputs;
                     if (Array.isArray(inputs)) {
                         formattedInputs = inputs.map(input => {
-                            // Remove any extra '0x' prefixes
-                            const cleanInput = input.startsWith('0x0x') ? input.slice(2) : input;
-                            return cleanInput;
+                            // Handle nested arrays
+                            if (Array.isArray(input)) {
+                                // Convert each hex byte to its numeric value
+                                const numbers = input.map(byte => {
+                                    const cleanByte = byte.replace(/^0x+/i, '');
+                                    return parseInt(cleanByte, 16);
+                                });
+                                return numbers;
+                            }
+                            // Handle string inputs
+                            else if (typeof input === 'string') {
+                                // Special handling for identifiers like chain_id and block_number
+                                if (name === 'get_header') {
+                                    if (inputs[0] === input) {
+                                        return input; // Keep chain_id as string
+                                    } else if (inputs[1] === input) {
+                                        return `0x${parseInt(input).toString(16)}`; // Convert block number to hex
+                                    }
+                                }
+                                const cleanHex = input.replace(/^0x+/i, '');
+                                return parseInt(cleanHex, 16);
+                            } else if (typeof input === 'number') {
+                                return input;
+                            } else if (typeof input === 'boolean') {
+                                return input ? 1 : 0;
+                            } else {
+                                console.warn('Unexpected input type:', typeof input, input);
+                                return String(input);
+                            }
                         });
                     } else if (typeof inputs === 'object') {
                         // Handle object inputs by converting to array
@@ -168,23 +216,18 @@ export default function SignPage() {
                     const jsonRPCResponse = await response.json();
                     console.log('Oracle response:', jsonRPCResponse);
 
+                    if (jsonRPCResponse.error) {
+                        throw new Error(`Oracle error: ${jsonRPCResponse.error.message}`);
+                    }
+
                     if (!jsonRPCResponse.result || !jsonRPCResponse.result.values) {
                         throw new Error('Invalid oracle response format');
                     }
 
                     // Ensure we return an array of strings
                     const values = jsonRPCResponse.result.values;
-                    if (Array.isArray(values)) {
-                        return values.map(v => String(v));
-                    } else if (typeof values === 'string') {
-                        return [values];
-                    } else if (typeof values === 'number') {
-                        return [String(values)];
-                    } else if (typeof values === 'boolean') {
-                        return [String(values)];
-                    } else {
-                        throw new Error(`Unexpected oracle response type: ${typeof values}`);
-                    }
+
+                    return values;
                 } catch (error: unknown) {
                     console.error('Detailed oracle error:', error);
                     if (error instanceof Error) {
@@ -194,71 +237,14 @@ export default function SignPage() {
                 }
             };
 
-            // Initialize Noir with the foreign call handler
-            const noir = new Noir(circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
-            (backend as any).oracle_hash = 'keccak';
-
-            // Get current block number and chain ID
-            const blockNumber = "8233877"; // You might want to get this from an API
-            const chainId = "11155111";    // Sepolia testnet chain ID
-
-            // Helper function to create a byte array of a specific length
-            const createByteArray = (length: number, value: string = "0x01") => {
-                return Array(length).fill(value);
-            };
-
-            // Helper function to convert hex string to byte array
-            const hexToBytes = (hex: string) => {
-                const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-                return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
-            };
-
-            // Test the foreign call handler first
-            try {
-                console.log('Testing foreign call handler...');
-                // Create more realistic test inputs
-                const testSignature = "0x" + "01".repeat(65); // 65 bytes of 0x01
-                const testPubKey = "0x" + "02".repeat(32); // 32 bytes of 0x02
-                const testContract = "0x" + "03".repeat(20); // 20 bytes of 0x03
-
-                const testInputs = {
-                    alice_signature_nonce_1: hexToBytes(testSignature),
-                    alice_signature_nonce_2: hexToBytes(testSignature),
-                    block_number: "8233877",
-                    chain_id: "11155111",
-                    contract_address: hexToBytes(testContract),
-                    message_nonce_1: 1,
-                    message_nonce_2: 2,
-                    pub_x_1: hexToBytes(testPubKey),
-                    pub_x_2: hexToBytes(testPubKey),
-                    pub_y_1: hexToBytes(testPubKey),
-                    pub_y_2: hexToBytes(testPubKey),
-                    receipt_amount: "1000000000000000000" // 1 ETH in wei
-                };
-
-                console.log('Test inputs:', JSON.stringify(testInputs, null, 2));
-                console.log('Test signature length:', testInputs.alice_signature_nonce_1.length);
-                console.log('Test pub key length:', testInputs.pub_x_1.length);
-                console.log('Test contract length:', testInputs.contract_address.length);
-
-                const testResult = await noir.execute(testInputs);
-                console.log('Test execution result:', testResult);
-            } catch (error) {
-                console.error('Test execution failed:', error);
-                if (error instanceof Error) {
-                    console.error('Test error stack:', error.stack);
-                }
-            }
-
-            // Convert all hex values to decimal numbers
-            const signature1Bytes = hexToBytes(signature1).map(byte => parseInt(byte.slice(2), 16));
-            const signature2Bytes = hexToBytes(signature2).map(byte => parseInt(byte.slice(2), 16));
-            const pubX1Bytes = hexToBytes(pubKeyX1).map(byte => parseInt(byte.slice(2), 16));
-            const pubX2Bytes = hexToBytes(pubKeyX2).map(byte => parseInt(byte.slice(2), 16));
-            const pubY1Bytes = hexToBytes(pubKeyY1).map(byte => parseInt(byte.slice(2), 16));
-            const pubY2Bytes = hexToBytes(pubKeyY2).map(byte => parseInt(byte.slice(2), 16));
-            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA").map(byte => parseInt(byte.slice(2), 16));
+            // Convert all hex values to byte arrays
+            const signature1Bytes = hexToBytes(signature1);
+            const signature2Bytes = hexToBytes(signature2);
+            const pubX1Bytes = hexToBytes(pubKeyX1);
+            const pubX2Bytes = hexToBytes(pubKeyX2);
+            const pubY1Bytes = hexToBytes(pubKeyY1);
+            const pubY2Bytes = hexToBytes(pubKeyY2);
+            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA");
 
             // Validate lengths
             if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {
@@ -275,8 +261,8 @@ export default function SignPage() {
             const inputs = {
                 alice_signature_nonce_1: signature1Bytes,
                 alice_signature_nonce_2: signature2Bytes,
-                block_number: parseInt(blockNumber),
-                chain_id: parseInt(chainId),
+                block_number: "8233877",
+                chain_id: 11155111,
                 contract_address: contractAddressBytes,
                 message_nonce_1: 1,
                 message_nonce_2: 2,
@@ -284,45 +270,63 @@ export default function SignPage() {
                 pub_x_2: pubX2Bytes,
                 pub_y_1: pubY1Bytes,
                 pub_y_2: pubY2Bytes,
-                receipt_amount: parseInt(amountToReceive)
+                receipt_amount: amountToReceive
             };
 
-            console.log('Starting proof generation with inputs:', JSON.stringify(inputs, null, 2));
-            console.log('Signature 1 length:', inputs.alice_signature_nonce_1.length);
-            console.log('Signature 2 length:', inputs.alice_signature_nonce_2.length);
-            console.log('Pub key X1 length:', inputs.pub_x_1.length);
-            console.log('Pub key Y1 length:', inputs.pub_y_1.length);
-            console.log('Contract address length:', inputs.contract_address.length);
+            console.log('Inputs:', inputs);
 
-            // First execute the circuit to get the witness
-            console.log('Executing circuit with inputs...');
-            let witness;
-            try {
-                console.log('About to execute circuit...');
-                console.log('Noir instance:', noir);
-                console.log('Noir options:', (noir as any).options);
+            // Initialize Noir and backend
+            const noir = new Noir(circuit as NoirCircuit);
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
 
-                const result = await noir.execute(inputs);
-                console.log('Circuit execution result:', result);
-                witness = result.witness;
-                console.log('Generated witness:', witness);
-            } catch (error) {
-                console.error('Circuit execution error:', error);
-                if (error instanceof Error) {
-                    console.error('Error stack:', error.stack);
-                }
-                throw error;
-            }
+            // Generate the proof
+            const { witness } = await noir.execute(inputs, foreignCallHandler);
+            console.log('Circuit execution result:', witness);
 
-            // Then generate the proof using the backend
-            const proof = await backend.generateProof(witness);
-            setProof(proof.proof);
+            const alice_proof = await backend.generateProof(witness);
+            console.log('Generated proof:', alice_proof);
+            console.log("proof", await backend.verifyProof(alice_proof));
 
-            // Verify the proof
-            const isValid = await backend.verifyProof(proof);
-            console.log('Proof is', isValid ? 'valid' : 'invalid');
+            const { vkAsFields } = await backend.generateRecursiveProofArtifacts(
+                alice_proof.proof,
+                10,
+            );
+
+
+            console.log("vkAsFields generatged");
+
+            const publicInputElements = 10;
+
+            const proofAsFields = [...alice_proof.publicInputs.slice(publicInputElements), ...proofToFields(alice_proof.proof)];
+            console.log("proof field length", proofAsFields.length);
+
+            console.log("proofAsFields generated");
+
+            const proofData = {
+                alice_proof,
+                vkAsFields,
+                proofAsFields
+            };
+
+            setProof(JSON.stringify(proofData, null, 2));
+
+            // Generate a unique ID for this proof
+            const proofId = Math.random().toString(36).substring(2, 15);
+
+            // Store proof data in localStorage
+            localStorage.setItem(`proof_${proofId}`, JSON.stringify(proofData));
+
+            // Generate receipt link with just the ID
+            const receiptLink = `${window.location.origin}/receipt/${proofId}`;
+            setReceiptLink(receiptLink);
+
         } catch (error) {
             console.error('Error generating proof:', error);
+            if (error instanceof Error) {
+                setError(error.message);
+            } else {
+                setError('Unknown error occurred');
+            }
         } finally {
             setIsProving(false);
         }
@@ -363,124 +367,6 @@ export default function SignPage() {
             console.error('Error in form submission:', error);
         } finally {
             setIsLoading(false);
-        }
-    };
-
-    // Test function to make a direct oracle call
-    const testGetHeaderCall = async () => {
-        console.log('Testing direct oracle call...');
-        try {
-            const response = await fetch('/api/oracle', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify({
-                    jsonrpc: "2.0",
-                    method: "resolve_foreign_call",
-                    params: [{
-                        function: "get_header",
-                        inputs: ["aa36a7", "7da395"], // chain_id and block_number
-                        session_id: 1,
-                        root_path: "",
-                        package_name: ""
-                    }],
-                    id: 1
-                })
-            });
-            const data = await response.json();
-            console.log('Test response:', data);
-        } catch (error) {
-            console.error('Test error:', error);
-        }
-    };
-
-    const testGetProof = async () => {
-        console.log('Testing get_proof call...');
-        try {
-            const response = await fetch('/api/oracle', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify({
-                    jsonrpc: "2.0",
-                    method: "resolve_foreign_call",
-                    params: [{
-                        function: "get_proof",
-                        inputs: [
-                            "0000000000000000000000000000000000000000000000000000000000aa36a7",
-                            "00000000000000000000000000000000000000000000000000000000007da37e",
-                            [
-                                "0000000000000000000000000000000000000000000000000000000000000058",
-                                "000000000000000000000000000000000000000000000000000000000000002b",
-                                "00000000000000000000000000000000000000000000000000000000000000ee",
-                                "000000000000000000000000000000000000000000000000000000000000008f",
-                                "0000000000000000000000000000000000000000000000000000000000000043",
-                                "00000000000000000000000000000000000000000000000000000000000000bf",
-                                "0000000000000000000000000000000000000000000000000000000000000020",
-                                "0000000000000000000000000000000000000000000000000000000000000039",
-                                "0000000000000000000000000000000000000000000000000000000000000064",
-                                "00000000000000000000000000000000000000000000000000000000000000d3",
-                                "000000000000000000000000000000000000000000000000000000000000008c",
-                                "0000000000000000000000000000000000000000000000000000000000000054",
-                                "00000000000000000000000000000000000000000000000000000000000000fa",
-                                "0000000000000000000000000000000000000000000000000000000000000003",
-                                "00000000000000000000000000000000000000000000000000000000000000e6",
-                                "000000000000000000000000000000000000000000000000000000000000002d",
-                                "0000000000000000000000000000000000000000000000000000000000000061",
-                                "0000000000000000000000000000000000000000000000000000000000000061",
-                                "0000000000000000000000000000000000000000000000000000000000000059",
-                                "00000000000000000000000000000000000000000000000000000000000000fa"
-                            ],
-                            [
-                                "00000000000000000000000000000000000000000000000000000000000000db",
-                                "0000000000000000000000000000000000000000000000000000000000000063",
-                                "0000000000000000000000000000000000000000000000000000000000000031",
-                                "000000000000000000000000000000000000000000000000000000000000008f",
-                                "0000000000000000000000000000000000000000000000000000000000000009",
-                                "00000000000000000000000000000000000000000000000000000000000000a1",
-                                "00000000000000000000000000000000000000000000000000000000000000c8",
-                                "0000000000000000000000000000000000000000000000000000000000000029",
-                                "000000000000000000000000000000000000000000000000000000000000005b",
-                                "0000000000000000000000000000000000000000000000000000000000000061",
-                                "000000000000000000000000000000000000000000000000000000000000002f",
-                                "0000000000000000000000000000000000000000000000000000000000000039",
-                                "0000000000000000000000000000000000000000000000000000000000000069",
-                                "00000000000000000000000000000000000000000000000000000000000000bf",
-                                "0000000000000000000000000000000000000000000000000000000000000068",
-                                "0000000000000000000000000000000000000000000000000000000000000046",
-                                "0000000000000000000000000000000000000000000000000000000000000019",
-                                "00000000000000000000000000000000000000000000000000000000000000d1",
-                                "00000000000000000000000000000000000000000000000000000000000000b1",
-                                "000000000000000000000000000000000000000000000000000000000000002b",
-                                "00000000000000000000000000000000000000000000000000000000000000a2",
-                                "0000000000000000000000000000000000000000000000000000000000000081",
-                                "0000000000000000000000000000000000000000000000000000000000000010",
-                                "000000000000000000000000000000000000000000000000000000000000006e",
-                                "00000000000000000000000000000000000000000000000000000000000000cd",
-                                "000000000000000000000000000000000000000000000000000000000000004d",
-                                "00000000000000000000000000000000000000000000000000000000000000b7",
-                                "0000000000000000000000000000000000000000000000000000000000000014",
-                                "00000000000000000000000000000000000000000000000000000000000000e6",
-                                "000000000000000000000000000000000000000000000000000000000000003a",
-                                "0000000000000000000000000000000000000000000000000000000000000078",
-                                "0000000000000000000000000000000000000000000000000000000000000057"
-                            ]
-                        ],
-                        session_id: 1,
-                        root_path: "",
-                        package_name: ""
-                    }],
-                    id: 1
-                })
-            });
-            const data = await response.json();
-            console.log('Test response:', data);
-        } catch (error) {
-            console.error('Test error:', error);
         }
     };
 
@@ -595,22 +481,6 @@ export default function SignPage() {
                         </button>
                     )}
 
-                    <button
-                        type="button"
-                        onClick={testGetHeaderCall}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                        Test Get Header
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={testGetProof}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mt-2"
-                    >
-                        Test Get Proof
-                    </button>
-
                     {proof && (
                         <div className="mt-4">
                             <h2 className="text-lg font-medium text-black mb-2">Generated Proof</h2>
@@ -621,6 +491,24 @@ export default function SignPage() {
                     )}
                 </form>
             </div>
+
+            {receiptLink && (
+                <div className="mt-8 max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
+                    <h2 className="text-lg font-medium text-black mb-2">Receipt Link Generated</h2>
+                    <div className="p-4 bg-gray-50 rounded-md">
+                        <p className="text-sm text-gray-600">A receipt link has been generated. Click the button below to copy it.</p>
+                        <button
+                            onClick={() => {
+                                navigator.clipboard.writeText(receiptLink);
+                                alert('Link copied to clipboard!');
+                            }}
+                            className="mt-2 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            Copy Receipt Link
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 } 

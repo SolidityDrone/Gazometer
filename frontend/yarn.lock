@@ -12,10 +12,10 @@
   resolved "https://registry.yarnpkg.com/@alloc/quick-lru/-/quick-lru-5.2.0.tgz#7bf68b20c0a350f936915fcae06f58e32007ce30"
   integrity sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==
 
-"@aztec/bb.js@0.72.1":
-  version "0.72.1"
-  resolved "https://registry.yarnpkg.com/@aztec/bb.js/-/bb.js-0.72.1.tgz#d44e64b9c35af777b968ec8f541f81bc1d3e67ab"
-  integrity sha512-CyySqBvaA/TJ/e8KksDp6vS44IUMY2LNJbigm4rKc3jJXjj0xc33V6V5DfC9kR0iVGnFFsvm+BlVBxFsCIQaAg==
+"@aztec/bb.js@0.82.0":
+  version "0.82.0"
+  resolved "https://registry.yarnpkg.com/@aztec/bb.js/-/bb.js-0.82.0.tgz#754611ff7562b28e83c08250836ceacb00364814"
+  integrity sha512-Iw4m9nzRngZ0L8d/f+P+pMqpTAisMfIYQUfQeYAX/F+xslRVkvlgluD1DR4iMV1DId45+TfA/CBZssZLy5PicA==
   dependencies:
     comlink "^4.4.1"
     commander "^12.1.0"

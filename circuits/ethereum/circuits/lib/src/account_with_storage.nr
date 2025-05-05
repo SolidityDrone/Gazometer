@@ -100,7 +100,7 @@ fn get_storage_value(
     storage_value.data
 }
 
-pub fn get_account_with_storage(
+unconstrained pub fn get_account_with_storage(
     chain_id: Field,
     block_number: u64,
     address: Address,

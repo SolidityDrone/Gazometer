@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Noir } from '@noir-lang/noir_js';
-import { UltraHonkBackend } from '@aztec/bb.js';
+import { Barretenberg, RawBuffer, UltraHonkBackend } from "@aztec/bb.js";
 import circuit from '@/public/circuits/alice_receipt.json';
 
 // Add type for the circuit
@@ -121,68 +121,74 @@ export default function ProveTestPage() {
                 }
             };
 
-            // Initialize Noir and backend
-            const noir = new Noir(circuit as unknown as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
 
-            // Helper function to convert hex string to byte array
-            const hexToBytes = (hex: string) => {
-                const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-                return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
-            };
+
 
             // Create test inputs
             const inputs = {
                 alice_signature_nonce_1: [
-                    7, 47, 62, 30, 35, 162, 23, 189, 195, 196, 27, 76, 97, 53, 43, 204,
-                    120, 216, 20, 14, 185, 129, 11, 211, 211, 96, 55, 251, 101, 199, 175, 64,
-                    109, 76, 55, 114, 176, 196, 212, 251, 41, 140, 236, 54, 208, 157, 100, 111,
-                    246, 162, 73, 113, 14, 67, 205, 242, 133, 110, 93, 78, 253, 191, 123, 211,
-                    28
+                    "0x07", "0x2f", "0x3e", "0x1e", "0x23", "0xa2", "0x17", "0xbd", "0xc3", "0xc4", "0x1b", "0x4c", "0x61", "0x35", "0x2b", "0xcc",
+                    "0x78", "0xd8", "0x14", "0x0e", "0xb9", "0x81", "0x0b", "0xd3", "0xd3", "0x60", "0x37", "0xfb", "0x65", "0xc7", "0xaf", "0x40",
+                    "0x6d", "0x4c", "0x37", "0x72", "0xb0", "0xc4", "0xd4", "0xfb", "0x29", "0x8c", "0xec", "0x36", "0xd0", "0x9d", "0x64", "0x6f",
+                    "0xf6", "0xa2", "0x49", "0x71", "0x0e", "0x43", "0xcd", "0xf2", "0x85", "0x6e", "0x5d", "0x4e", "0xfd", "0xbf", "0x7b", "0xd3",
+                    "0x1c"
                 ],
                 alice_signature_nonce_2: [
-                    71, 101, 249, 203, 235, 179, 255, 37, 36, 95, 200, 227, 129, 143, 54, 162,
-                    244, 250, 9, 249, 137, 211, 32, 205, 239, 196, 101, 178, 149, 214, 160, 175,
-                    55, 115, 17, 87, 90, 196, 81, 153, 217, 171, 10, 159, 88, 84, 63, 18,
-                    242, 94, 51, 220, 196, 199, 231, 240, 147, 25, 136, 104, 32, 136, 182, 231,
-                    28
+                    "0x47", "0x65", "0xf9", "0xcb", "0xeb", "0xb3", "0xff", "0x25", "0x24", "0x5f", "0xc8", "0xe3", "0x81", "0x8f", "0x36", "0xa2",
+                    "0xf4", "0xfa", "0x09", "0xf9", "0x89", "0xd3", "0x20", "0xcd", "0xef", "0xc4", "0x65", "0xb2", "0x95", "0xd6", "0xa0", "0xaf",
+                    "0x37", "0x73", "0x11", "0x57", "0x5a", "0xc4", "0x51", "0x99", "0xd9", "0xab", "0x0a", "0x9f", "0x58", "0x54", "0x3f", "0x12",
+                    "0xf2", "0x5e", "0x33", "0xdc", "0xc4", "0xc7", "0xe7", "0xf0", "0x93", "0x19", "0x88", "0x68", "0x20", "0x88", "0xb6", "0xe7",
+                    "0x1c"
                 ],
                 block_number: "8233877",
                 chain_id: 11155111,
                 contract_address: [
-                    88, 43, 238, 143, 67, 191, 32, 57, 100, 211, 140, 84, 250, 3, 230, 45, 97, 97, 89, 250],
+                    "0x58", "0x2B", "0xEE", "0x8f", "0x43", "0xBF", "0x20", "0x39", "0x64", "0xd3", "0x8c", "0x54", "0xFA", "0x03", "0xe6", "0x2d",
+                    "0x61", "0x61", "0x59", "0xfA"
+                ],
                 message_nonce_1: 1,
                 message_nonce_2: 2,
                 pub_x_1: [
-                    202, 177, 74, 11, 181, 87, 223, 233, 10, 38, 141, 205, 4, 241, 126, 46,
-                    168, 216, 204, 213, 87, 113, 170, 24, 236, 114, 58, 242, 238, 69, 146, 230
+                    "0xca", "0xb1", "0x4a", "0x0b", "0xb5", "0x57", "0xdf", "0xe9", "0x0a", "0x26", "0x8d", "0xcd", "0x04", "0xf1", "0x7e", "0x2e",
+                    "0xa8", "0xd8", "0xcc", "0xd5", "0x57", "0x71", "0xaa", "0x18", "0xec", "0x72", "0x3a", "0xf2", "0xee", "0x45", "0x92", "0xe6"
                 ],
                 pub_x_2: [
-                    151, 15, 170, 30, 246, 253, 254, 220, 197, 33, 86, 228, 136, 13, 42, 13,
-                    206, 87, 175, 250, 241, 153, 230, 96, 142, 155, 35, 201, 240, 133, 210, 209
+                    "0x97", "0x0f", "0xaa", "0x1e", "0xf6", "0xfd", "0xfe", "0xdc", "0xc5", "0x21", "0x56", "0xe4", "0x88", "0x0d", "0x2a", "0x0d",
+                    "0xce", "0x57", "0xaf", "0xfa", "0xf1", "0x99", "0xe6", "0x60", "0x8e", "0x9b", "0x23", "0xc9", "0xf0", "0x85", "0xd2", "0xd1"
                 ],
                 pub_y_1: [
-                    117, 212, 75, 184, 188, 152, 219, 147, 36, 15, 72, 7, 124, 99, 170, 75,
-                    41, 213, 154, 163, 53, 207, 244, 178, 160, 136, 35, 79, 105, 194, 46, 186
+                    "0x75", "0xd4", "0x4b", "0xb8", "0xbc", "0x98", "0xdb", "0x93", "0x24", "0x0f", "0x48", "0x07", "0x7c", "0x63", "0xaa", "0x4b",
+                    "0x29", "0xd5", "0x9a", "0xa3", "0x35", "0xcf", "0xf4", "0xb2", "0xa0", "0x88", "0x23", "0x4f", "0x69", "0xc2", "0x2e", "0xba"
                 ],
                 pub_y_2: [
-                    52, 42, 30, 161, 209, 132, 56, 146, 52, 122, 143, 154, 13, 203, 9, 114,
-                    252, 208, 63, 224, 23, 210, 108, 178, 180, 205, 212, 99, 191, 123, 154, 242
+                    "0x34", "0x2a", "0x1e", "0xa1", "0xd1", "0x84", "0x38", "0x92", "0x34", "0x7a", "0x8f", "0x9a", "0x0d", "0xcb", "0x09", "0x72",
+                    "0xfc", "0xd0", "0x3f", "0xe0", "0x17", "0xd2", "0x6c", "0xb2", "0xb4", "0xcd", "0xd4", "0x63", "0xbf", "0x7b", "0x9a", "0xf2"
                 ],
-                receipt_amount: 0x100
+                receipt_amount: "1"
             };
 
-            // @ts-ignore
+
+            // Initialize Noir and backend
+            const noir = new Noir(circuit as NoirCircuit);
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+
+            // Generate the proof
             const { witness } = await noir.execute(inputs, foreignCallHandler);
             console.log('Circuit execution result:', witness);
-            console.log("proving")
-            // @ts-ignore
-            const proof = await backend.generateProof(witness, { keccak: true });
-            setProof(proof.proof);
-            console.log("proof generated");
 
-            const isValid = await backend.verifyProof(proof);
-            console.log('Proof is', isValid ? 'valid' : 'invalid');
+            // Generate the proof using the backend
+            const recursiveProof = await backend.generateProof(witness, { recursive: true });
+
+            setProof(recursiveProof.proof);
+            console.log("Proof generated:", (recursiveProof.proof));
+            console.log("Proof verified:", await backend.verifyProof(recursiveProof.proof));
+
+
+            console.log('Proof is', await backend.verifyProof(proof));
+
+            const res = await backend.generateProofForRecursiveAggregation(witness);
+            console.log("Recursive proof aggregation generated:", res);
+            console.log("Recursive proof aggregation verified:", await backend.verifyProof(res.proof));
 
         } catch (error) {
             console.error('Error in test proof:', error);

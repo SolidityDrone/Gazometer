@@ -8,7 +8,9 @@ members = [
     "ethereum/circuits/get_header",
     "ethereum/circuits/get_transaction",
     "ethereum/circuits/get_log",
-    "main/gazometer_users/alice_receipt",
+    "main/gazometer_p2p/alice_receipt",
+    "main/gazometer_p2p/bob_recursive",
+    "main/gazometer_self/self_service",
     "lib/noir-lib"
 ]
 default-member = "ethereum/circuits/lib"

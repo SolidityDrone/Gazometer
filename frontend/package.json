@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@aztec/bb.js": "0.72.1",
+    "@aztec/bb.js": "0.82.0",
     "@noir-lang/noir_js": "1.0.0-beta.2",
     "@reown/appkit": "^1.7.3",
     "@reown/appkit-adapter-wagmi": "^1.7.3",

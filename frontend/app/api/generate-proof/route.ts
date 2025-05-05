@@ -1,41 +1,30 @@
 import { NextResponse } from 'next/server';
-import { Noir } from '@noir-lang/noir_js';
-import { UltraHonkBackend } from '@aztec/bb.js';
-import circuit from '@/public/circuits/alice_receipt.json';
 
 export async function POST(request: Request) {
     try {
-        const { inputs } = await request.json();
+        const body = await request.json();
+        console.log('Proxying request to oracle:', body);
 
-        // Initialize Noir and backend
-        const noir = new Noir(circuit);
-        const backend = new UltraHonkBackend(circuit.bytecode);
-        (backend as any).oracle_hash = 'keccak';
-
-        // Create the foreign call handler
-        const foreignCallHandler = async (name: string, inputs: string[] | any) => {
-            // Your existing foreign call handler logic here
-            // ...
-        };
-
-        // Execute the circuit
-        (noir as any).options = { foreignCallHandler };
-        const result = await noir.execute(inputs);
-
-        // Generate the proof
-        const proof = await backend.generateProof(result.witness);
-
-        // Verify the proof
-        const isValid = await backend.verifyProof(proof);
-
-        return NextResponse.json({
-            proof: proof.proof,
-            isValid
+        const response = await fetch('http://127.0.0.1:5555', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(body)
         });
+
+        if (!response.ok) {
+            throw new Error(`Oracle server responded with status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Oracle response:', data);
+        return NextResponse.json(data);
     } catch (error) {
-        console.error('Error generating proof:', error);
+        console.error('Error proxying to oracle:', error);
         return NextResponse.json(
-            { error: 'Failed to generate proof' },
+            { error: 'Failed to communicate with oracle server' },
             { status: 500 }
         );
     }
