@@ -216,13 +216,12 @@ Solo development sometimes can be overwhelming. This project monorepo contained 
 
 ## Disclaimer
 
-## Disclaimer
-
 This project was built during NoirHack as an experimental demonstration.  
 **It is not production-ready and contains known (and possibly unknown) vulnerabilities.**  
 The code is provided "as is", without warranty of any kind, express or implied.  
 **Use at your own risk.**  
 The author(s) accept no responsibility or liability for any damages, losses, or other issues arising from the use, misuse, or inability to use this code, in whole or in part.
+
 ---
 
 *Happy hacking!*
