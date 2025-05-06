@@ -1,75 +1,128 @@
 # Gazometer
 
-Gazometer is a privacy-first zk-payment protocol that leverages Noir Lang to integrate a simple yet effective privacy mechanism.
+Gazometer is a privacy-first zk payment protocol that leverages Noir Lang to integrate a simple yet effective privacy mechanic.
 
 ## Overview
 
-**Gazometer** enables users to exchange value while preserving their privacy. This is achieved through Noir's unique features, which ensure that user identities remain confidential and balance changes between participants are recorded as state changes in the contract, rather than as direct Ether transfers. As a result, external observers cannot determine transaction amounts or participants.
+The technical goal of the project is to deliver a protocol that allows users to exchange value while preserving their privacy. Privacy is maintained thanks to Noir's unique features. User identities are kept safe, and balance changes between participants don't actually happen as Ether transfers, but rather as state changes in the contract. From the outside, no one is able to tell how much is being transferred or who is participating in the transaction.
 
-While transactions are ideally relayed, for demonstration purposes, self-relaying is also supported. Please note that a relayer RPC server is not included in this repository.
+Ideally, these transactions are supposed to be relayed, but can eventually be self-relayed for demonstration purposes. The relayer RPC-Server is not included in this repository.
 
----
-
-## Project Structure
-
-- **Frontend**  
-- **Oracle RPC-server**
-- **Circuits**
-- **Contracts**
+**Recap:**
+- Users exchange value privately.
+- Privacy is enforced by Noir's features.
+- No direct Ether transfers; only contract state changes.
+- Transaction details and participants remain hidden.
+- Relayer support is not included in this repo.
 
 ---
 
-## How It Works
+## Project Structure Overview
 
-Users can deposit funds to become "shielded." They can then transfer funds privately to other participants or withdraw/transfer to standard Ethereum addresses (`0x...`). The protocol is primarily based on ECDSA, [Hydra](https://github.com/TaceoLabs/noir-hydra), and Noir ZK proofs.
+- Frontend
+- Oracle RPC-server
+- Circuits
+- Contracts
 
-### Shielded Transfers
+---
 
-Transfers between shielded addresses function like private invoices. Here’s a typical user flow:
+## How it works
 
-#### Initialization
+In Gazometer, users can deposit funds to become "shielded". They can either transfer privately between other participants, or withdraw/transfer to 0xAddresses. This protocol is mostly based on ECDSA, [Hydra](https://github.com/TaceoLabs/noir-hydra), and of course Noir ZK proofs.
 
-- **Alice** initializes her first deposit by computing a zk-proof using `self_service/main.nr`.
-- She privately inputs her signature of a message representing her nonce. For simplicity, the nonce number is signed.
-- Without Alice’s private key, her signature cannot be reconstructed. A commitment is created using `Keccak256(Sig("0"))` for nonce 0.
-- This signature is used to derive a key for Hydra, which encrypts the balance commitment.
-- Commitments and balance commitments are mapped together, and a nullifier is added to prevent reuse.
-- **Disclaimer:** The initial deposit will leak information about the starting balance, but subsequent actions remain private unless the user acts carelessly.
+Transfers between shielded addresses work as a private invoice, but before we get into this, let's see what a typical user would do on their own.
 
-Once the proof is ready, Alice calls the `Initialize()` payable function, transferring Ether. The verifier checks the proof, ensuring the amount matches `msg.value`. This step does not require a relayer.
+**Recap:**
+- Users deposit to become shielded.
+- Private transfers or withdrawals are possible.
+- Based on ECDSA, Hydra, and Noir ZK proofs.
+- Shielded transfers work like private invoices.
 
-#### Adding Balance, Withdrawing, or Transferring to Ethereum Addresses
+---
 
-- The same circuit can be used to deposit more funds or withdraw.
-- Alice’s state is stored in the contract, and Ethereum storage proofs (using Merkle Patricia Tries) validate her values. This is implemented with [vLayer-monorepo](https://github.com/olehmisar/vlayer-monorepo/tree/main).
-- Alice provides two signatures (for nonce N and N-1) as private inputs to reconstruct her latest and new commitments.
-- The circuit verifies the previous commitment, decrypts the current balance, and creates a new commitment and encrypted balance for the new nonce.
-- States are updated, the nonce is nullified, and the user can deposit or withdraw. Withdrawals can also be used to transfer to standard Ethereum addresses.
+### Initialization
 
-Each commitment and balance is unlinkable, and each balance uses a unique 256-bit key, making history reconstruction infeasible for attackers.
+Alice needs to initialize her first deposit into the protocol. To do so, she needs to compute a zk proof using `self_service/main.nr`. In this circuit, Alice will privately input her signature of a message representing her nonce into the protocol. For simplicity, we just sign the nonce number.
 
-#### zkTransfers (Shielded-to-Shielded)
+Without Alice's private key, no one would be able to reconstruct her signature, so we use `Keccak256(Sig("0"))` to create a commit for nonce 0. Her `Sig(0)` is then used to derive a key for Hydra. This key is needed to encrypt the BalanceCommitment. The validity of the data will be guaranteed by the circuit, therefore Commit and BalanceCommit are tied together in a mapping (`bytes32 commit => bytes32 BalanceCommit`). Other than that, to avoid reusing, we will push a nullifier.
 
-- Transfers between shielded users leverage Noir’s recursive proofs for maximum privacy.
-- Alice generates a proof in `alice_receipt/main.nr`, declaring the transfer amount as a public input.
-- After generating and verifying her zk-proof, Alice can generate a link for Bob in the Gazometer Dapp.
-- Bob receives the proof, verifies Alice’s proof recursively, and generates his own proof.
-- The final zk-proof contains both users’ commitments, balance commitments, and nullifiers.
-- Alice does not reveal her past commitments or initial deposit address to Bob. From the outside, only state changes are visible; no Ether is directly transferred.
+**DISCLAIMER:** Remember that the first transaction will, of course, leak information on the initial deposit. No other leak is likely to happen unless Alice makes careless actions.
 
-**Note:** The circuit always checks that the previous commitment exists and nullifies the nonce to prevent rewriting, creating a secure chain of state commitments.
+Once the proof is ready for use, she will proceed to transfer Ether in the `Initialize()` payable function and the Verifier will check that the proof is correct, therefore the amount must match the `msg.value`. At this point, Alice has her nullified initial commit. This step doesn't require a relayer.
+
+**Recap:**
+- Alice creates a zk proof for her first deposit.
+- Her signature of the nonce is used to create a commitment and encryption key.
+- Commitments and balance commitments are mapped together.
+- A nullifier prevents reuse.
+- The first deposit leaks the initial amount, but subsequent actions remain private.
+- No relayer is needed for initialization.
+
+---
+
+### Adding Balance, Withdrawing, or Transferring to 0xAddresses
+
+The same circuit might be used to deposit additional balance or to withdraw. Since a state for Alice's first commitment and balance exists in the contract, we can leverage Ethereum storage proof with MPT (Merkle Patricia Tries) to validate their values. To do so, I worked with [vLayer-monorepo](https://github.com/olehmisar/vlayer-monorepo/tree/main).
+
+Here's where the magic happens: This time, Alice will provide 2 signatures representing her current nonce (N) and previous (N-1). These are private inputs and serve to reconstruct her latest commitment and the new one she is about to create. Once we construct the `Sig(N-1)` hash commitment, we can get a verified storage value in the balanceCommit slot. Once we get this balanceCommit, we can use `Sig(N-1)` to deterministically derive her past encryption key and decrypt her current balance. Each balance commitment has, in fact, a different 256-bit encryption key each time.
+
+At this point, the circuit will calculate a valid commitment for N using `Sig(N)` as the source so we can derive a new key. Once we add or subtract the amount to her current balance, we are ready to re-encrypt the new balance commitment tied to N. Therefore, we are safe to update the states, nullify the nonce, and proceed to either deposit or withdraw. Withdrawal can also be used as a form of transfer towards 0xAddresses.
+
+There shall be no link between each commit and balance since these are used privately on Alice's end. Therefore, no one should be able to reconstruct the signatures and figure out her commits. Moreover, decrypting her balance would require brute-forcing or a more direct attack, but would only leak information of a balance at a given nonce. Since each balance has its own 256-bit key, this disincentivizes history reconstruction. Something that is, conversely, very easy for Alice as everything is embedded in her key. We will get there in the "About compliance" section.
+
+**Recap:**
+- Alice can deposit more or withdraw using the same circuit.
+- Ethereum storage proofs validate her state.
+- Two signatures (N and N-1) are used to reconstruct and update commitments.
+- Each balance uses a unique encryption key.
+- No link between commits; balances are private.
+- Only Alice can easily reconstruct her own history.
+
+---
+
+### zkTransfers
+
+So we figured out the mechanic that is used to unlink Alice's operations from her initial deposit, but we haven't spoken about transfers between two "shielded" users. How does it work? Well, we can leverage Noir's unique recursive proofs to make the transfer as private as possible.
+
+Think about it as a private invoice. Alice computes her proof in `alice_receipt/main.nr`. Alongside the private data she needs to prove her current state and validate her next commitment, she will declare an amount which ends up as a public input in the circuit.
+
+Once her zkProof is generated and verified in Noir_JS, she will be able in the Gazometer Dapp to generate a link for Bob. She's supposed to communicate with Bob somehow, but rather than giving Bob an address or a handle, she will give him a valid proof for an intent to change state. Bob will receive the proof and compute the same steps on his behalf, with the addition of recursively proving that Alice's proof is valid. So Bob ends up with a zkProof that contains 2 Commits, 2 BalanceCommits, and their relative nullifiers.
+
+What's important here is that Alice doesn't leak to Bob any information about her past commitment, nor her initial deposit address. On top of that, from the outside, the transfer happens as state changes, therefore protecting transfer amounts and direction. No Ether is effectively transferred. But now Alice and Bob have a new current nonce with coherent balance commitments.
+
+**NOTE:** During proof computation, we always check that commitment N-1 exists in the first place when checking its value with MPT proof, and nullifying the nonce will prevent rewriting a commitment, effectively creating a chain of state commitments.
+
+**Recap:**
+- Transfers between shielded users use recursive proofs.
+- Alice generates a proof and shares it with Bob.
+- Bob verifies Alice's proof and creates his own.
+- No information about past commitments or deposit addresses is leaked.
+- Transfers are only state changes; no Ether is moved.
+- Each transfer creates a new nonce and balance commitment.
 
 ---
 
 ## Compliance
 
-The signed nonce mechanism allows users to reconstruct their entire transaction history using their signatures. A dedicated wallet could improve the user experience. This setup also facilitates future compliance features, such as Proof of Inclusion or Proof of Non-Inclusion. Integrating zkPassport could be a valuable future addition.
+Since we use this signed nonce mechanism, a user can reconstruct their entire history with just their signatures. A dedicated wallet would improve UX in that case. This wasn't the main focus of the project though.
+
+This default setup makes it easier for future upgrades for compliance features such as PoI (Proof of Inclusion) or Proof of Non-Inclusion. As I'm writing, I figured out zkPassport could be a good addition to this project, but I don't have time anymore to keep on.
+
+**Recap:**
+- Users can reconstruct their own history with signatures.
+- A dedicated wallet would improve UX.
+- The setup allows for future compliance features.
+- zkPassport could be integrated in the future.
 
 ---
 
 ## The Dapp
 
-Gazometer Dapp provides all the necessary tools for users to securely compute their proofs locally. Future updates will focus on improving the user experience.
+Gazometer Dapp comes with all the needed tools to let users securely compute their proof on their side. It will be extended further to support a better UX.
+
+**Recap:**
+- Dapp provides tools for local proof computation.
+- Future updates will focus on UX improvements.
 
 ---
 
@@ -82,57 +135,88 @@ Gazometer Dapp provides all the necessary tools for users to securely compute th
 
 ---
 
-## Developer Story & Technical Challenges
+## Developer Story / Technical Difficulties
 
-### First Steps with Noir
+### First steps into Noir
 
-This project was both challenging and rewarding, especially as I started with no prior experience in Noir Lang. My initial focus was on implementing Ethereum storage proofs, which required extensive research and experimentation. The vLayer monorepo was initially overwhelming and outdated, but after some effort, I managed to get it working.
+This project for me has been challenging, but scary at the same time as I didn't know anything about Noir Lang, but became more confident as I was going. The first thing I tried to figure out was how to do Ethereum storage proof. I tried a few resources I gathered from Noir Discord / Awesome repo but at first it seemed impossible.
 
-I experimented with circuit design and validation, gradually building up the `alice_receipt` circuit. Understanding Merkle Patricia Tries and their integration with Noir was particularly educational.
+vLayer monorepo was discouraging as it felt overwhelming. It also wasn't up to date and contained a lot of errors both in circuits but moreover in the oracle RPC. So I hacked a while and got it to work.
 
-### Encryption Scheme
+I made some first attempt experiments to figure out how to write the circuit and validate its usage. Once done, I started to write the first lines and slowly managed to create `alice_receipt`. I had some trouble figuring out errors initially as figuring out how MPT really works wasn't as easy as I thought. Learned a lot about the structure of Ethereum though, very formative.
 
-Selecting an appropriate encryption scheme was crucial. I discovered Hydra through the Awesome Noir repo, which was well-documented and up-to-date.
+Another crucial point to the first circuit I was working on was figuring out which encryption scheme could work for my need. So I discovered Hydra in the awesome repo, didn't have problems in that case as the repository was recently updated and documented.
 
-### Frontend Proving
-
-Integrating the Noir oracle and handling foreign calls in the frontend was complex, especially due to type mismatches between the oracle RPC server and the frontend. After resolving these issues, I was able to proceed with implementing Bob’s part of the protocol.
-
-### Recursion in Noir
-
-Implementing recursive proofs in Noir was not straightforward, as the documentation was lacking. After researching community repositories and switching to the correct version of Noir_js, I successfully implemented recursion.
-
-### Final Steps
-
-Once confident, I created the `self_service` circuit for deposits and withdrawals. This was relatively straightforward after the previous work.
-
-### Reflections
-
-Solo development can be overwhelming, especially when working with interconnected monorepos and zk-proofs, where small mismatches can break the flow. Despite the challenges, the experience was both fun and educational, and I gained significant knowledge in the zk field.
+**Recap:**
+- Started with no experience in Noir.
+- Faced challenges with Ethereum storage proofs and vLayer.
+- Learned by experimenting and debugging.
+- Chose Hydra for encryption after research.
 
 ---
 
-## Future Upgrades
+### Frontend proving
 
-- **Compliance Layer:** A robust compliance layer is essential for this type of project. Future work will focus on improving UX and compliance features.
-- **Optimization & Security:** As I am not a cryptographer, the project may contain suboptimal practices. Code and math quality must be reviewed to avoid vulnerabilities. Proving time and on-chain costs are also important for UX.
-- **Contract Interactions:** A future goal is to enable direct interactions with other contracts via smart accounts tied to commitments, allowing users to interact with external protocols without withdrawing funds.
-- **Dapp Improvements:** Enhancing the application’s UX/UI is a priority.
+This wasn't really straightforward. I had quite a lot of work to do with integrating the Noir oracle foreignCall. I was repeatedly having errors due to being new to the types Noir was accepting. Figuring out correct types both in oracle RPC-Server and in the frontend when executing the circuit has been tricky, but after that I was ready for Bob.
+
+**Recap:**
+- Integrating Noir oracle was challenging.
+- Type mismatches caused repeated errors.
+- Eventually resolved and moved on to Bob's part.
+
+---
+
+### Bob's turn
+
+Once Alice's part was complete, the next step was to figure out recursion in Noir. This wasn't really straightforward even though the concept is very easy. The docs aren't precisely up to date in that case, so it required some major effort into researching around repositories.
+
+Eventually, I figured out which version of Noir_js to use for recursion. From the quickstart I was on 0.76, but I found that other people were using aztec-bb.js 0.82.x for that purpose, so I managed to figure out how to obtain `vkAsField`, `proofAsField`.
+
+**Recap:**
+- Recursion in Noir was hard due to outdated docs.
+- Required research and version management.
+- Solved by switching to the right Noir_js version.
+
+---
+
+### Ending where I should have started
+
+Once I was confident, I created the `self_service` circuit, which would be used for deposit/withdrawals. No big issues apart from classic type mismanagement. But it was the easy part as the circuit wasn't very different from `alice_receipt` in the first place.
+
+**Recap:**
+- Created `self_service` circuit for deposits/withdrawals.
+- Fewer issues after previous experience.
+
+---
+
+### Overall
+
+Solo development sometimes can be overwhelming. This project monorepo contained 4 different repos and they were all interconnected. When working with zkProof, a small mismatch will break the flow and that happened many times. Many hours spent researching, testing, debugging, etc. Frankly, it was both fun and stressful, but one week later I'm definitely enriched in the zk field, which I'm new to.
+
+**Recap:**
+- Solo development was challenging but rewarding.
+- Many hours spent on research and debugging.
+- Gained significant zk knowledge.
+
+---
+
+## Future upgrades
+
+- **Compliance Layer:** As mentioned, compliance layer is the most important part for a project of this kind. So if I ever get to keep on working on this, I would definitely focus on a good UX to comply at best.
+- **Optimization, vulnerability discoveries:** I'm not a cryptographer. This project most likely contains bad practices under the hood with unconstrained functions. But this would be a critical part to address, as in the Ethereum world, optimization is not optional and carefully reviewing code and math quality to avoid unexpected vulnerabilities would be the most crucial one. Proving time is also a factor in UX and on-chain costs.
+- **Interact with contracts:** One thing I had in mind initially, but was far from my time constraint, was to add the ability to directly transact within the protocol towards other contracts. The design I had in mind was to create a factory to deploy smart accounts tied to the commitments, so that we could eventually verify the proof on the main contract and then execute the public output calldata to the SA and transact from it. This could have been useful as interacting with some external protocol without withdrawing and then using EOA could be an option for users. To avoid risk in the main contract, smart accounts tied to the commitment could have been an option to do so. This might be more interesting to look into after Pectra via 7702.
+- **Dapp:** Simply improving the application to have a better UX/UI.
+
+**Recap:**
+- Compliance and UX are top priorities for future work.
+- Code optimization and security review are needed.
+- Future plans include contract interactions and Dapp improvements.
 
 ---
 
 ## Disclaimer
 
 This project was built during NoirHack as an experimental demonstration. It is **not production-ready** and contains known vulnerabilities. Use at your own risk.
-
----
-
-## Acknowledgements
-
-- [Noir Lang](https://noir-lang.org/)
-- [Hydra](https://github.com/TaceoLabs/noir-hydra)
-- [vLayer-monorepo](https://github.com/olehmisar/vlayer-monorepo/tree/main)
-- Noir and zk community resources
 
 ---
 
