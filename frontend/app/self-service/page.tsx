@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http, hexToBytes } from 'viem';
+import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
 import { useAccount } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
@@ -15,6 +15,12 @@ interface NoirCircuit {
     noir_version: string;
     hash: number;
 }
+
+// Helper function to convert hex string to byte array
+const hexToBytes = (hex: string) => {
+    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+    return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
+};
 
 export default function SelfServicePage() {
     const [amount, setAmount] = useState('');
@@ -104,8 +110,6 @@ export default function SelfServicePage() {
         try {
             setIsProving(true);
             setError(null);
-            setProof(null);
-            setReceiptLink(null);
 
             // Get the current block number using public client
             const publicClient = createPublicClient({
@@ -115,20 +119,20 @@ export default function SelfServicePage() {
             const currentBlock = await publicClient.getBlockNumber();
 
             // Contract address
-            const contractAddress = "0x582BEE8f43BF203964d38c54FA03e62d616159fA" as `0x${string}`;
+            const contractAddress = "0x582BEE8f43BF203964d38c54FA03e62d616159fA";
 
-            // Convert signatures to bytes and format as hex strings
-            const signature1Bytes = Array.from(hexToBytes(signature1.startsWith('0x') ? signature1 as `0x${string}` : `0x${signature1}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
-            const signature2Bytes = Array.from(hexToBytes(signature2.startsWith('0x') ? signature2 as `0x${string}` : `0x${signature2}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
+            // Convert signatures to bytes
+            const signature1Bytes = hexToBytes(signature1);
+            const signature2Bytes = hexToBytes(signature2);
 
-            // Convert public keys to bytes and format as hex strings
-            const pubX1Bytes = Array.from(hexToBytes(pubKeyX1.startsWith('0x') ? pubKeyX1 as `0x${string}` : `0x${pubKeyX1}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
-            const pubX2Bytes = Array.from(hexToBytes(pubKeyX2.startsWith('0x') ? pubKeyX2 as `0x${string}` : `0x${pubKeyX2}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
-            const pubY1Bytes = Array.from(hexToBytes(pubKeyY1.startsWith('0x') ? pubKeyY1 as `0x${string}` : `0x${pubKeyY1}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
-            const pubY2Bytes = Array.from(hexToBytes(pubKeyY2.startsWith('0x') ? pubKeyY2 as `0x${string}` : `0x${pubKeyY2}` as `0x${string}`)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
+            // Convert public keys to bytes
+            const pubX1Bytes = hexToBytes(pubKeyX1);
+            const pubX2Bytes = hexToBytes(pubKeyX2);
+            const pubY1Bytes = hexToBytes(pubKeyY1);
+            const pubY2Bytes = hexToBytes(pubKeyY2);
 
-            // Convert contract address to bytes and format as hex strings
-            const contractAddressBytes = Array.from(hexToBytes(contractAddress)).map(b => `0x${b.toString(16).padStart(2, '0')}`);
+            // Convert contract address to bytes
+            const contractAddressBytes = hexToBytes(contractAddress);
 
             // Validate lengths
             if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {
@@ -154,8 +158,8 @@ export default function SelfServicePage() {
                 pub_x_2: pubX2Bytes,
                 pub_y_2: pubY2Bytes,
                 contract_address: contractAddressBytes,
-                amount: amount,
-                is_deposit: isDeposit ? "1" : "0",
+                amount: amount, // 1 ETH in wei
+                is_deposit: "1",
                 receiver_address: contractAddressBytes
             };
 
@@ -315,13 +319,37 @@ export default function SelfServicePage() {
             <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
                 <h1 className="text-2xl font-bold mb-6 text-center text-white">Self Service</h1>
 
-                {error && (
-                    <div className="mt-4 p-4 bg-red-900/50 rounded-md">
-                        <p className="text-sm text-red-300">{error}</p>
-                    </div>
-                )}
-
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label htmlFor="nonce" className="block text-sm font-medium text-white">
+                            Nonce
+                        </label>
+                        <input
+                            type="number"
+                            id="nonce"
+                            value={nonce}
+                            onChange={(e) => setNonce(e.target.value)}
+                            className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                            required
+                            min="1"
+                        />
+                    </div>
+
+                    <div>
+                        <label htmlFor="receiver" className="block text-sm font-medium text-white">
+                            Receiver Address
+                        </label>
+                        <input
+                            type="text"
+                            id="receiver"
+                            value={receiverAddress}
+                            onChange={(e) => setReceiverAddress(e.target.value)}
+                            className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                            required
+                            placeholder="0x..."
+                        />
+                    </div>
+
                     <div>
                         <label htmlFor="amount" className="block text-sm font-medium text-white">
                             Amount
@@ -337,16 +365,70 @@ export default function SelfServicePage() {
                         />
                     </div>
 
-                    <div className="space-y-4">
-                        <div>
-                            <h3 className="text-lg font-medium text-white">Signature (Nonce 0)</h3>
-                            <p className="text-sm text-gray-300">Signature: {signature1 || 'No signature yet'}</p>
-                            <p className="text-sm text-gray-300">Recovered Address: {recoveredAddress1 || 'Not recovered yet'}</p>
-                            <p className="text-sm text-gray-300">Hash: {hash1 || 'No hash yet'}</p>
-                            <p className="text-sm text-gray-300">Message Hash: {messageHash1 || 'No message hash yet'}</p>
-                            <p className="text-sm text-gray-300">Public Key X: {pubKeyX1 || 'No public key yet'}</p>
-                            <p className="text-sm text-gray-300">Public Key Y: {pubKeyY1 || 'No public key yet'}</p>
-                            <p className="text-sm text-gray-300">Verified: {isVerified1 ? 'Yes' : 'No'}</p>
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="isDeposit"
+                            checked={isDeposit}
+                            onChange={(e) => setIsDeposit(e.target.checked)}
+                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="isDeposit" className="ml-2 block text-sm text-white">
+                            Deposit (uncheck for withdrawal)
+                        </label>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-white">
+                            Signature 1
+                        </label>
+                        <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
+                            {signature1 || 'No signature yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Message Hash: {messageHash1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Keccak256 Hash: {hash1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key X: {pubKeyX1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key Y: {pubKeyY1 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key Verified: {isVerified1 ? '✅' : '❌'}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-white">
+                            Signature 2
+                        </label>
+                        <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
+                            {signature2 || 'No signature yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Message Hash: {messageHash2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Keccak256 Hash: {hash2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key X: {pubKeyX2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key Y: {pubKeyY2 || 'Not calculated yet'}
+                        </div>
+                        <div className="mt-2 text-sm text-white">
+                            Public Key Verified: {isVerified2 ? '✅' : '❌'}
                         </div>
                     </div>
 
@@ -355,14 +437,15 @@ export default function SelfServicePage() {
                         disabled={isLoading}
                         className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                     >
-                        {isLoading ? 'Signing...' : 'Sign Message'}
+                        {isLoading ? 'Signing...' : 'Sign Messages'}
                     </button>
 
-                    {signature1 && (
+                    {signature1 && signature2 && (
                         <button
+                            type="button"
                             onClick={generateProof}
                             disabled={isProving}
-                            className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                         >
                             {isProving ? 'Generating Proof...' : 'Generate Proof'}
                         </button>
@@ -372,7 +455,7 @@ export default function SelfServicePage() {
                         <div className="mt-4">
                             <h2 className="text-lg font-medium text-white mb-2">Generated Proof</h2>
                             <pre className="p-4 border border-green-500 bg-gray-800 overflow-auto text-xs text-white">
-                                {JSON.stringify(proof, null, 2)}
+                                {proof}
                             </pre>
                         </div>
                     )}

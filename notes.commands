@@ -1,4 +1,4 @@
-nargo execute --oracle-resolver=http://127.0.0.1:5555 -o ./target
+nargo execute --oracle-resolver=http://127.0.0.1:5555
  
 bb prove -b ./target/bob_recursive.json -w ./target/bob_recursive.gz -o ./target --oracle_hash keccak
 bb write_vk -b ./target/bob_recursive.json -o ./target --oracle_hash keccak

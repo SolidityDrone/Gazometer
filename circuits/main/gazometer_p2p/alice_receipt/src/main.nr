@@ -490,9 +490,9 @@ fn test_encryption() {
     println(encrypted_fields[0]);
     // Decrypt the first encrypted field
     
-    let mock_encrypted_field: Field = 0x2eeabfd4c857e8331ed5eb0f233289420796d442d022d4bdae600f7909d6a356;
     
-    let decrypted_value = decrypt_balance(alice_signature_nonce_1, mock_encrypted_field);
+    
+    let decrypted_value = decrypt_balance(alice_signature_nonce_1, encrypted_fields[0]);
     println("Decrypted value:");
     println(decrypted_value);
 
