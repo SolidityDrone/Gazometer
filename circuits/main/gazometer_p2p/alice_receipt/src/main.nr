@@ -18,6 +18,25 @@ use dep::keccak256::keccak256;
 
 // output chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
 
+fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
+    // Convert it to a field element
+    let mut v = 1;
+    let mut high = 0 as Field;
+    let mut low = 0 as Field;
+
+    for i in 0..15 {
+        // covers bytes 16..30 (31 is truncated and ignored)
+        low = low + (bytes32[15 + 15 - i] as Field) * v;
+        v = v * 256;
+        // covers bytes 0..14
+        high = high + (bytes32[14 - i] as Field) * v;
+    }
+    // covers byte 15
+    low = low + (bytes32[15] as Field) * v;
+
+    low + high * v
+}
+
 
 
 fn main(
@@ -111,16 +130,20 @@ fn main(
     // rejected in the smart contract
     let nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
     
-    // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
+    // Extract last bytes before truncation
+    let block_hash_last_byte = commit_1_verified_storage.block_hash[31] as Field;
+    let commit_hash_last_byte = commit_2_hash[31] as Field;
+    let last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
+
     (
-        chain_id,
         block_number as Field, 
         address_to_field(contract_address),
-        bytes_to_field(commit_1_verified_storage.block_hash), 
-        bytes_to_field(nullifier), // <---- nullifier for commit_2 
+        field_from_bytes_32_trunc(commit_1_verified_storage.block_hash), 
+        field_from_bytes_32_trunc(nullifier), // <---- nullifier for commit_2 
         encrypted_final_balance, // <-- balance destined for commit_2
-        bytes_to_field(commit_2_hash),
-        receipt_amount
+        field_from_bytes_32_trunc(commit_2_hash),
+        receipt_amount,
+        last_bytes  // New field containing the last bytes
     )
 }
 
@@ -219,12 +242,6 @@ fn address_to_field(address: Address) -> Field {
     result
 }
 
-// Function to safely convert storage value to field
-fn safe_storage_to_field(storage_value: [u8; 32]) -> Field {
-    // Convert bytes to field directly
-    // Noir's field type automatically handles overflow
-    bytes_to_field(storage_value)
-}
 
 // Unconstrained function to convert u64 to ASCII bytes
 unconstrained fn u64_to_ascii_bytes(value: u64) -> [u8; 20] {
@@ -288,6 +305,12 @@ fn hash_u64(value: u64) -> [u8; 32] {
     keccak256(message, digit_count)
 }
 
+// Function to safely convert storage value to field
+fn safe_storage_to_field(storage_value: [u8; 32]) -> Field {
+    // Convert bytes to field directly
+    // Noir's field type automatically handles overflow
+    bytes_to_field(storage_value)
+}
 
 #[test]
 fn test_hash_u64_values() {
@@ -325,12 +348,12 @@ fn test_hash_u64_values() {
 }
 
 #[test]
-fn test_storage_proof() {
+fn test_init() {
     // Chain ID for Sepolia testnet
     let chain_id = 11155111;
     
     // Block number
-    let block_number = 8233854;
+    let block_number =   8275916;
     
     // Message nonces
     let message_nonce_1 = 1;
@@ -377,7 +400,7 @@ fn test_storage_proof() {
     
     let receipt_amount = 1;
     
-    let (chain_id, block_number, contract_address, block_hash, nullifier, encrypted_balance, commit_2_hash, receipt_amount) = main(
+    let (block_number, contract_address, block_hash, nullifier, encrypted_balance, commit_2_hash, receipt_amount, last_bytes) = main(
         alice_signature_nonce_1, 
         alice_signature_nonce_2, 
         chain_id, 
@@ -392,8 +415,7 @@ fn test_storage_proof() {
         receipt_amount
     );
     println("---- CIRCUIT OUTPUT ----");
-    println("chain_id");
-    println(chain_id);
+
     println("block_number");
     println(block_number);
     println("contract_address");
@@ -408,6 +430,8 @@ fn test_storage_proof() {
     println(commit_2_hash);
     println("receipt_amount");
     println(receipt_amount);
+    println("last_bytes");
+    println(last_bytes);
     println("---- END OF CIRCUIT OUTPUT ----");
 }
 

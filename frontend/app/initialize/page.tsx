@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
 import { sepolia } from 'viem/chains';
-import { useAccount } from 'wagmi';
+import { useAccount, useWriteContract } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/self_service.json';
+import { GAZOMETER_ADDRESS } from '../lib/constants';
+import { GAZOMETER_ABI } from '../lib/abi/gazometerABI';
 
 // Add type for the circuit
 interface NoirCircuit {
@@ -36,6 +38,7 @@ const hexToBytes = (hex: string) => {
     return cleanHex.match(/.{2}/g)?.map(byte => `0x${byte}`) || [];
 };
 
+
 export default function InitializePage() {
     const [amount, setAmount] = useState('');
     const [signature1, setSignature1] = useState('');
@@ -57,8 +60,12 @@ export default function InitializePage() {
     const [isProving, setIsProving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [receiptLink, setReceiptLink] = useState<string | null>(null);
-
+    const [publicInputs, setPublicInputs] = useState<string[] | null>(null);
+    const [isSubmittingProof, setIsSubmittingProof] = useState(false);
     const { address } = useAccount();
+
+
+    const { writeContract, isPending, isSuccess, data, error: writeError } = useWriteContract();
 
     const handleSign = async (message: string, isFirstSignature: boolean) => {
         try {
@@ -130,7 +137,7 @@ export default function InitializePage() {
             const currentBlock = await publicClient.getBlockNumber();
 
             // Contract address
-            const contractAddress = "0x582BEE8f43BF203964d38c54FA03e62d616159fA";
+            const contractAddress = GAZOMETER_ADDRESS;
 
             // Convert signatures to bytes
             const signature1Bytes = hexToBytes(signature1);
@@ -163,7 +170,6 @@ export default function InitializePage() {
                 chain_id: "11155111", // Sepolia chain ID
                 block_number: currentBlock.toString(),
                 message_nonce_1: "0",
-                message_nonce_2: "0",
                 pub_x_1: pubX1Bytes,
                 pub_y_1: pubY1Bytes,
                 pub_x_2: pubX2Bytes,
@@ -281,9 +287,13 @@ export default function InitializePage() {
 
             const init_proof = await backend.generateProof(witness);
             console.log('Generated proof:', init_proof);
-            console.log("proof", await backend.verifyProof(init_proof));
 
-            setProof(JSON.stringify(init_proof, null, 2));
+            const proofBytes = `0x${Buffer.from(init_proof.proof).toString('hex')}`;
+            const publicInputsArray = init_proof.publicInputs.slice(0, 11);
+
+            // Set the proof state
+            setProof(proofBytes);
+            setPublicInputs(publicInputsArray);
 
         } catch (error) {
             console.error('Error generating proof:', error);
@@ -319,6 +329,34 @@ export default function InitializePage() {
 
         } catch (error) {
             console.error('Error in form submission:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSendOnchain = (e: React.FormEvent) => {
+        e.preventDefault(); // Prevent form submission
+        if (!proof || !publicInputs) {
+            alert('Proof or public inputs missing!');
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const slicedInputs = publicInputs.slice(0, 11);
+            writeContract({
+                address: GAZOMETER_ADDRESS,
+                abi: GAZOMETER_ABI,
+                functionName: 'initCommit',
+                args: [proof as `0x${string}`, slicedInputs as readonly `0x${string}`[]],
+                value: BigInt(amount)
+            });
+
+            console.log("amount", amount);
+            console.log("inputs", slicedInputs as readonly `0x${string}`[]);
+            console.log("proof", proof as `0x${string}`);
+
+        } catch (err) {
+            alert('Failed to send onchain: ' + (err instanceof Error ? err.message : 'Unknown error'));
         } finally {
             setIsLoading(false);
         }
@@ -368,6 +406,7 @@ export default function InitializePage() {
 
                     {signature1 && (
                         <button
+                            type="button"
                             onClick={generateProof}
                             disabled={isProving}
                             className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
@@ -376,12 +415,20 @@ export default function InitializePage() {
                         </button>
                     )}
 
-                    {proof && (
+                    {proof && publicInputs && (
                         <div className="mt-4">
-                            <h2 className="text-lg font-medium text-white mb-2">Generated Proof</h2>
+                            <h2 className="text-lg font-medium text-white mb-2">Proof Bytes</h2>
                             <pre className="p-4 border border-green-500 bg-gray-800 overflow-auto text-xs text-white">
-                                {JSON.stringify(proof, null, 2)}
+                                {proof}
                             </pre>
+                            <button
+                                type="button"
+                                onClick={handleSendOnchain}
+                                disabled={isLoading}
+                                className="mt-2 w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                            >
+                                {isLoading ? 'Sending...' : 'Send Onchain'}
+                            </button>
                         </div>
                     )}
                 </form>

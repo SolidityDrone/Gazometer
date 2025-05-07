@@ -71,13 +71,32 @@ fn compute_final_balance(
     encrypted_fields[0]
 }
 
+
+fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
+    // Convert it to a field element
+    let mut v = 1;
+    let mut high = 0 as Field;
+    let mut low = 0 as Field;
+
+    for i in 0..15 {
+        // covers bytes 16..30 (31 is truncated and ignored)
+        low = low + (bytes32[15 + 15 - i] as Field) * v;
+        v = v * 256;
+        // covers bytes 0..14
+        high = high + (bytes32[14 - i] as Field) * v;
+    }
+    // covers byte 15
+    low = low + (bytes32[15] as Field) * v;
+
+    low + high * v
+}
+
 fn main(
     user_signature_nonce_1: [u8; 65],
     user_signature_nonce_2: [u8; 65],
     chain_id: pub Field,
-    block_number: u64,
-    message_nonce_1: u64,
-    message_nonce_2: u64,
+    block_number: pub Field,
+    message_nonce_1: Field,
     pub_x_1: [u8; 32],
     pub_y_1: [u8; 32],
     pub_x_2: [u8; 32],
@@ -91,13 +110,16 @@ fn main(
     let sig_64_1 = create_64_byte_signature(user_signature_nonce_1);
     let sig_64_2 = create_64_byte_signature(user_signature_nonce_2);
 
-    // Compute hashed messages
-    let hashed_message_1 = hash_u64(message_nonce_1);
-    let hashed_message_2 = hash_u64(message_nonce_2);
+    // Convert message nonce and block number from Field to u64
+    let message_nonce_1_u64 = message_nonce_1 as u64;
+    let message_nonce_2_u64 = message_nonce_1_u64 + 1;
+    let block_number_u64 = block_number as u64;
+    let hashed_message_1 = hash_u64(message_nonce_1_u64);
+    let hashed_message_2 = hash_u64(message_nonce_2_u64);
 
     // Verify signatures
     assert(std::ecdsa_secp256k1::verify_signature(pub_x_1, pub_y_1, sig_64_1, hashed_message_1));
-    if message_nonce_1 != 0 {
+    if message_nonce_1_u64 != 0 {
         assert(std::ecdsa_secp256k1::verify_signature(pub_x_2, pub_y_2, sig_64_2, hashed_message_2));
     }
 
@@ -110,21 +132,28 @@ fn main(
     let mut final_nullifier: [u8; 32] = [0; 32];
     let mut final_encrypted_balance: Field = 0;
     let mut final_commit_hash: [u8; 32] = [0; 32];
+    let mut last_bytes: Field = 0;  // New field to store the last bytes
 
     // Handle initial state (message_nonce_1 == 0)
-    if message_nonce_1 == 0 {
+    if (user_signature_nonce_1 ==  user_signature_nonce_2){
         // For initial state, we only allow deposits
         assert(is_deposit == 1, "Initial state only supports deposits");
         
         final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132), 32);
-        final_encrypted_balance = compute_final_balance(
-            user_signature_nonce_2,  // For initial state, we use sig2 for both
-            user_signature_nonce_2,  // For initial state, we use sig2 for both
-            amount,
-            amount,
-            true  // Always add for initial deposit
-        );
+        
+        // For initial state, just encrypt the amount using sig1
+        let key = derive_key_from_signature(user_signature_nonce_1);
+        let iv = [0, 0, 0, 0];
+        let balance_fields = [amount, 0, 0, 0, 0, 0, 0, 0];
+        let encrypted_fields = enc::encrypt(balance_fields, key, iv);
+        final_encrypted_balance = encrypted_fields[0];
+        
         final_commit_hash = commit_1_hash;
+        
+        // Extract last bytes before truncation
+        let block_hash_last_byte = 0 as Field;  // Use 0x00 for block hash in initial state
+        let commit_hash_last_byte = commit_1_hash[31] as Field;
+        last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
     } else {
         // Handle normal state transition (deposit or withdrawal)
         let balance_commit_slot = 2;
@@ -135,7 +164,7 @@ fn main(
         let commit_1_verified_storage = unsafe {
             get_account_with_storage(
                 chain_id,
-                block_number,
+                block_number_u64,
                 contract_address,
                 commit_1_storage_key
             )
@@ -153,19 +182,24 @@ fn main(
 
         // Compute nullifier
         final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132), 32);
-        final_block_hash = bytes_to_field(commit_1_verified_storage.block_hash);
+        final_block_hash = field_from_bytes_32_trunc(commit_1_verified_storage.block_hash);
         final_commit_hash = commit_2_hash;
+        
+        // Extract last bytes before truncation
+        let block_hash_last_byte = commit_1_verified_storage.block_hash[31] as Field;
+        let commit_hash_last_byte = commit_2_hash[31] as Field;
+        last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
     }
 
     // Return values in order matching _publicInputs array
     (
-        block_number as Field,       // _publicInputs[3]
-        final_block_hash,            // _publicInputs[4]
-        bytes_to_field(final_nullifier),  // _publicInputs[5]
-        final_encrypted_balance,     // _publicInputs[6]
-        bytes_to_field(final_commit_hash),  // _publicInputs[7]
+        final_block_hash,        // _publicInputs[4]
+        field_from_bytes_32_trunc(final_nullifier),  // _publicInputs[5]
+        final_encrypted_balance, // _publicInputs[6]
+        field_from_bytes_32_trunc(final_commit_hash),  // _publicInputs[7]
         address_to_field(contract_address),  // _publicInputs[8]
-        address_to_field(receiver_address)   // _publicInputs[9]
+        address_to_field(receiver_address),   // _publicInputs[9]
+        last_bytes  // New field containing the last bytes
     )
 }
 
@@ -230,7 +264,7 @@ fn hex_bytes_to_ascii(hex_bytes: [u8; 65]) -> [u8; 132] {
     // Convert each byte to two ASCII characters
     for i in 0..65 {
         let byte = hex_bytes[i];
-        let high_nibble = byte >> 4;
+        let high_nibble = (byte >> 4) & 0x0f;
         let low_nibble = byte & 0x0f;
         
         result[2 + i * 2] = nibble_to_ascii(high_nibble);
@@ -370,19 +404,18 @@ fn test_hash_u64_values() {
 }
 
 #[test]
-fn test_shield() {
+fn test_init() {
     // Chain ID for Sepolia testnet
     let chain_id = 11155111;
     
     // Block number
-    let block_number = 8233854;
+    let block_number = 8274988 ;
     
     // Message nonces
     let message_nonce_1 = 0;
-    let message_nonce_2 = 0;
     
     // contract_address to check - using the correct type
-    let contract_address: Address = [0x58, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
+    let contract_address: Address = [0x69, 0xe4, 0xb3, 0x8E, 0x6c, 0x08, 0xBD, 0x64, 0x67, 0xa7, 0x03, 0xa1, 0x7C, 0xd7, 0x7A, 0xcB, 0x0B, 0xad, 0xFa, 0x66];
     let receiver_address: Address = [0x99, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
 
     // Signatures (65 bytes)
@@ -393,11 +426,25 @@ fn test_shield() {
         0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
         0x1b
     ];
+
+    // Debug: Print the commit hash calculation
+    let hex_string = hex_bytes_to_ascii(user_signature_nonce_1);
+    println("Debug - ASCII hex string length:");
+    println(hex_string.len());
+    println("Debug - First 20 bytes of ASCII hex string:");
+    for i in 0..20 {
+        print(hex_string[i]);
+    }
+    println("");
+    let commit_hash = keccak256(hex_string, 132);
+    println("Debug - Commit hash:");
+    println(commit_hash);
+
     let user_signature_nonce_2: [u8; 65] = [
-        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
-        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
-        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
-        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
+        0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
+        0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
+        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0xd3,
         0x1c
     ];
 
@@ -413,24 +460,23 @@ fn test_shield() {
 
     // Using same public key for both signatures
     let pub_x_2: [u8; 32] = [
-        0x97, 0x0f, 0xaa, 0x1e, 0xf6, 0xfd, 0xfe, 0xdc, 0xc5, 0x21, 0x56, 0xe4, 0x88, 0x0d, 0x2a, 0x0d,
-        0xce, 0x57, 0xaf, 0xfa, 0xf1, 0x99, 0xe6, 0x60, 0x8e, 0x9b, 0x23, 0xc9, 0xf0, 0x85, 0xd2, 0xd1
+        0xca, 0xb1, 0x4a, 0x0b, 0xb5, 0x57, 0xdf, 0xe9, 0x0a, 0x26, 0x8d, 0xcd, 0x04, 0xf1, 0x7e, 0x2e,
+        0xa8, 0xd8, 0xcc, 0xd5, 0x57, 0x71, 0xaa, 0x18, 0xec, 0x72, 0x3a, 0xf2, 0xee, 0x45, 0x92, 0xe6
     ];
     let pub_y_2: [u8; 32] = [
-        0x34, 0x2a, 0x1e, 0xa1, 0xd1, 0x84, 0x38, 0x92, 0x34, 0x7a, 0x8f, 0x9a, 0x0d, 0xcb, 0x09, 0x72,
-        0xfc, 0xd0, 0x3f, 0xe0, 0x17, 0xd2, 0x6c, 0xb2, 0xb4, 0xcd, 0xd4, 0x63, 0xbf, 0x7b, 0x9a, 0xf2
+         0x75, 0xd4, 0x4b, 0xb8, 0xbc, 0x98, 0xdb, 0x93, 0x24, 0x0f, 0x48, 0x07, 0x7c, 0x63, 0xaa, 0x4b,
+        0x29, 0xd5, 0x9a, 0xa3, 0x35, 0xcf, 0xf4, 0xb2, 0xa0, 0x88, 0x23, 0x4f, 0x69, 0xc2, 0x2e, 0xba
     ];
     
     let amount = 100;
     let is_deposit = 1;  // 1 for deposit, 0 for withdrawal
     
-    let (block_number, block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field, receiver_address_field) = main(
+    let (block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field, receiver_address_field, last_bytes) = main(
         user_signature_nonce_1, 
         user_signature_nonce_2, 
         chain_id, 
         block_number,
         message_nonce_1,
-        message_nonce_2,
         pub_x_1,
         pub_y_1,
         pub_x_2,
@@ -442,8 +488,7 @@ fn test_shield() {
     );
 
     println("---- CIRCUIT OUTPUT ----");
-    println("block_number");
-    println(block_number);
+
     println("block_hash");
     println(block_hash);
     println("nullifier");
@@ -456,6 +501,8 @@ fn test_shield() {
     println(contract_address_field);
     println("receiver_address");
     println(receiver_address_field);
+    println("last_bytes");
+    println(last_bytes);
     println("---- END OF CIRCUIT OUTPUT ----");
 }
 
@@ -491,11 +538,11 @@ fn test_storage_key_generation() {
 fn test_hex_literal_hashing() {
     // The actual hex values as bytes
     let hex_bytes = [
-        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
-        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
-        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
-        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
-        0x1c
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
     ];
 
     // Convert hex bytes to ASCII string representation
@@ -503,19 +550,16 @@ fn test_hex_literal_hashing() {
 
     println("Hash from ASCII string bytes (including '0x' prefix):");
     println(keccak256(hex_string_bytes, 132));
-
-    println("Hash from actual hex bytes:");
-    println(keccak256(hex_bytes, 65));
 } 
 
 #[test]
 fn test_encryption() {
-    let user_signature_nonce_1: [u8; 65] = [
-        0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
-        0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
-        0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
-        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0xd3,
-        0x1c
+     let user_signature_nonce_1: [u8; 65] = [
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
     ];
 
     // Derive key from signature
@@ -538,7 +582,7 @@ fn test_encryption() {
     println(encrypted_fields[0]);
     // Decrypt the first encrypted field
     
-    let mock_encrypted_field: Field = 0x2eeabfd4c857e8331ed5eb0f233289420796d442d022d4bdae600f7909d6a356;
+    let mock_encrypted_field: Field = 0x0394e37d9de02f6842dfac3c43bfe1137f1bbd4b1ca26e02c4c71889d7373ebe;
     
     let decrypted_value = decrypt_balance(user_signature_nonce_1, mock_encrypted_field);
     println("Decrypted value:");
@@ -546,4 +590,125 @@ fn test_encryption() {
 
     // Assert that the decrypted value matches the original
     assert(decrypted_value == original_value);
+} 
+
+#[test]
+fn test_keccak_hex_output() {
+    // Test with a simple message
+    let message = "0x1234";
+    let mut message_bytes: [u8; 64] = [0; 64];
+    
+    // Convert hex string to bytes
+    message_bytes[0] = 0x12;
+    message_bytes[1] = 0x34;
+    
+    let hash = keccak256(message_bytes, 2);
+    
+    println("Input message: 0x1234");
+    println("Keccak hash in hex: 0x");
+    for i in 0..32 {
+        let byte = hash[i];
+        if byte < 16 {
+            print("0");
+        }
+        print(byte);
+    }
+    println("");
+    
+    // Test with a signature
+    let signature: [u8; 65] = [
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
+    ];
+    
+    let sig_hash = keccak256(signature, 65);
+    
+    println("\nInput signature hash in hex: 0x");
+    for i in 0..32 {
+        let byte = sig_hash[i];
+        if byte < 16 {
+            print("0");
+        }
+        print(byte);
+    }
+    println("");
+    
+    // Test with hex string conversion
+    let hex_string = hex_bytes_to_ascii(signature);
+    let hex_hash = keccak256(hex_string, 132);
+    
+    println("\nInput signature as hex string hash: 0x");
+    for i in 0..32 {
+        let byte = hex_hash[i];
+        if byte < 16 {
+            print("0");
+        }
+        print(byte);
+    }
+    println("");
+} 
+
+#[test]
+fn test_signature_processing() {
+    let signature: [u8; 65] = [
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
+    ];
+
+    // Print raw signature hash
+    let raw_hash = keccak256(signature, 65);
+    println("Raw signature hash:");
+    println(raw_hash);
+
+    // Print ASCII hex string version
+    let hex_string = hex_bytes_to_ascii(signature);
+    println("ASCII hex string (first 20 bytes):");
+    for i in 0..20 {
+        print(hex_string[i]);
+    }
+    println("...");
+
+    // Print hash of ASCII hex string
+    let ascii_hash = keccak256(hex_string, 132);
+    println("Hash of ASCII hex string:");
+    println(ascii_hash);
+} 
+
+#[test]
+fn test_commit_hash_calculation() {
+    // Use the same signature from test_init
+    let signature: [u8; 65] = [
+        0x13, 0x51, 0x2a, 0x51, 0x61, 0xbd, 0x83, 0x80, 0xde, 0xc4, 0x38, 0x3b, 0xab, 0x21, 0x30, 0xce,
+        0x1c, 0x1b, 0xb2, 0x28, 0x95, 0x50, 0x42, 0x14, 0x72, 0x42, 0x26, 0xaf, 0x58, 0x60, 0xd5, 0xaa,
+        0x61, 0x5e, 0x53, 0xae, 0x5e, 0xde, 0xab, 0xca, 0xc3, 0xa5, 0x6b, 0x87, 0xe8, 0x37, 0x62, 0x85,
+        0x0c, 0x1b, 0xea, 0x5c, 0xcd, 0xde, 0xdc, 0x1a, 0x1f, 0x37, 0x77, 0xfc, 0x6d, 0xfe, 0xcd, 0x4c,
+        0x1b
+    ];
+
+    // Print the ASCII hex string
+    let hex_string = hex_bytes_to_ascii(signature);
+
+    println("ASCII hex string length: {}");
+    println(hex_string.len());
+    println("First 20 bytes of ASCII hex string:");
+    for i in 0..20 {
+        print(hex_string[i]);
+    }
+    println("");
+
+    // Calculate and print the commit hash
+    let commit_hash = keccak256(hex_string, 132);
+    println("Commit hash:");
+    println(commit_hash);
+
+    // Also print the raw signature hash for comparison
+    let raw_hash = keccak256(signature, 65);
+    println("Raw signature hash:");
+    println(raw_hash);
 } 

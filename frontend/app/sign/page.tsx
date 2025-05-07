@@ -7,6 +7,7 @@ import { useAccount } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/alice_receipt.json';
+import { GAZOMETER_ADDRESS } from '../lib/constants';
 
 // Add type for the circuit
 interface NoirCircuit {
@@ -244,7 +245,7 @@ export default function SignPage() {
             const pubX2Bytes = hexToBytes(pubKeyX2);
             const pubY1Bytes = hexToBytes(pubKeyY1);
             const pubY2Bytes = hexToBytes(pubKeyY2);
-            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA");
+            const contractAddressBytes = hexToBytes(GAZOMETER_ADDRESS);
 
             // Validate lengths
             if (signature1Bytes.length !== 65 || signature2Bytes.length !== 65) {

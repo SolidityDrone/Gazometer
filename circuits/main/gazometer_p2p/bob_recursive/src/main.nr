@@ -18,17 +18,34 @@ use dep::std::verify_proof;
 
 // output chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
 
+fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
+    // Convert it to a field element
+    let mut v = 1;
+    let mut high = 0 as Field;
+    let mut low = 0 as Field;
 
+    for i in 0..15 {
+        // covers bytes 16..30 (31 is truncated and ignored)
+        low = low + (bytes32[15 + 15 - i] as Field) * v;
+        v = v * 256;
+        // covers bytes 0..14
+        high = high + (bytes32[14 - i] as Field) * v;
+    }
+    // covers byte 15
+    low = low + (bytes32[15] as Field) * v;
+
+    low + high * v
+}
 
 fn main(
     verification_key: [Field; 128],
     proof: [Field; 456],
-    public_inputs: [Field; 10], // <-- apparently too many for std:verify_proof 
+    public_inputs: [Field; 10],
     key_hash: Field,
     bob_signature_nonce_1: [u8; 65],
     bob_signature_nonce_2: [u8; 65],
     chain_id: pub Field,
-    block_number: u64,
+    block_number:  u64,
     message_nonce_1: u64,
     message_nonce_2: u64,
     pub_x_1: [u8; 32],
@@ -36,7 +53,7 @@ fn main(
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
     contract_address: Address
-) -> pub (Field, u64, Address, Bytes32, [u8; 32], Field, [u8; 32], Field, Field, Field) {
+) -> pub (Field, Field, Field, Field, Field, Field, Field, Field, Field, Field) {
 
     // v this stuff isnt worth wasting my time anymore and will comment out. Imrpove docs and resources thx
     // verify_proof(verification_key, proof, public_inputs, key_hash);
@@ -106,7 +123,7 @@ fn main(
     let decrypted_1_balance_commit_balance = 
         decrypt_balance(bob_signature_nonce_1, encrypted_balance);
     // 2) add receipt_amount to the decrypted balanceCommit for n-1 
-    let new_balance = decrypted_1_balance_commit_balance - public_inputs[9];
+    let new_balance = decrypted_1_balance_commit_balance - public_inputs[8];
     // 3) encrypt the new balance with sign(n)
     let new_key = derive_key_from_signature(bob_signature_nonce_2);
     let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
@@ -118,18 +135,26 @@ fn main(
     // rejected in the smart contract
     let nullifier = keccak256(keccak256(hex_bytes_to_ascii(bob_signature_nonce_2), 132), 32);
     
+    let block_hash_last_byte = commit_1_verified_storage.block_hash[31] as Field;
+    let commit_hash_last_byte = commit_2_hash[31] as Field;
+    let last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
+
+    // Combine last_bytes with public_inputs[9] by multiplying last_bytes by 2^16
+    // This achieves the same effect as a left shift but works with Field arithmetic
+    let combined_bytes = (last_bytes * 65536) + public_inputs[9];
+
     // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
     (
-        chain_id,
-        block_number, 
-        contract_address,
-        commit_1_verified_storage.block_hash, 
-        nullifier, // bob nullifier
-        encrypted_final_balance, // bob final balance updated
-        commit_2_hash, // bob commitment
-        public_inputs[6],   // alice's nullifier
-        public_inputs[7], // alice's balance commitment
-        public_inputs[8], // alice's committment 
+        block_number as Field,
+        address_to_field(contract_address),
+        field_from_bytes_32_trunc(commit_1_verified_storage.block_hash),
+        bytes_to_field(nullifier),
+        encrypted_final_balance,
+        field_from_bytes_32_trunc(commit_2_hash),
+        public_inputs[5],  // alice nullifier
+        public_inputs[6], // alice enc balance  
+        public_inputs[7], // alice commit hash 
+        combined_bytes // combined last_bytes and public_inputs[9]
     )
 }
 
@@ -285,6 +310,14 @@ fn hash_u64(value: u64) -> [u8; 32] {
     keccak256(message, digit_count)
 }
 
+// Add these helper functions if not present
+fn address_to_field(address: Address) -> Field {
+    let mut result: Field = 0;
+    for i in 0..20 {
+        result = result * 256 + (address[i] as Field);
+    }
+    result
+}
 
 #[test]
 fn test_hash_u64_values() {
@@ -319,4 +352,120 @@ fn test_hash_u64_values() {
     println(hash_10);
     println("Hash of 100:");
     println(hash_100);
+}
+
+
+#[test]
+fn test_init() {
+    // Chain ID for Sepolia testnet
+    let chain_id = 11155111;
+    
+    // Block number - using the value from our previous conversions
+    let block_number = 8275936;  // This is 0x7e4605
+    
+    // Message nonces
+    let message_nonce_1 = 1;
+    let message_nonce_2 = 2;
+    
+    // contract_address to check - using the correct type
+    let contract_address: Address = [0x58, 0x2B, 0xEE, 0x8f, 0x43, 0xBF, 0x20, 0x39, 0x64, 0xd3, 0x8c, 0x54, 0xFA, 0x03, 0xe6, 0x2d, 0x61, 0x61, 0x59, 0xfA];
+    
+    // Initialize verification key with zeros
+    let verification_key: [Field; 128] = [0; 128];
+    
+    // Initialize proof with zeros
+    let proof: [Field; 456] = [0; 456];
+    
+    // Initialize key hash with zero
+    let key_hash: Field = 0;
+    
+    // Public inputs - using direct hex values converted to Field
+    let public_inputs: [Field; 10] = [
+        0xaa36a7,
+        0x1,
+        0x7e47cc,
+        0x69e4b38e6c08bd6467a703a17cd77acb0badfa66,
+        0x6b94e5a8d9399817c935e4f76e2540baca94bc739afd85ee393833e95fc462,
+        0x305ba7452ffa6eba5c58ca6161471c205a862c290c8bc637c2056c84fe1101,
+        0x211ba0c0b6ee0f11e6894da524fe8e9919f8d5faa6fd7e4a536d4e8e17004eef,
+        0x48fc0df33948d28957d5f62ee17643b0311d4dda43f2cf747839703c52f380,
+        0x1,
+        0xb298
+    ];
+
+    // Signatures (65 bytes) - keeping the same signatures as they're test values
+    let bob_signature_nonce_1: [u8; 65] = [
+        0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
+        0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
+        0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
+        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0xd3,
+        0x1c
+    ];
+    let bob_signature_nonce_2: [u8; 65] = [
+        0x47, 0x65, 0xf9, 0xcb, 0xeb, 0xb3, 0xff, 0x25, 0x24, 0x5f, 0xc8, 0xe3, 0x81, 0x8f, 0x36, 0xa2,
+        0xf4, 0xfa, 0x09, 0xf9, 0x89, 0xd3, 0x20, 0xcd, 0xef, 0xc4, 0x65, 0xb2, 0x95, 0xd6, 0xa0, 0xaf,
+        0x37, 0x73, 0x11, 0x57, 0x5a, 0xc4, 0x51, 0x99, 0xd9, 0xab, 0x0a, 0x9f, 0x58, 0x54, 0x3f, 0x12,
+        0xf2, 0x5e, 0x33, 0xdc, 0xc4, 0xc7, 0xe7, 0xf0, 0x93, 0x19, 0x88, 0x68, 0x20, 0x88, 0xb6, 0xe7,
+        0x1c
+    ];
+
+    // Public key coordinates - keeping the same public keys as they're test values
+    let pub_x_1: [u8; 32] = [
+        0xca, 0xb1, 0x4a, 0x0b, 0xb5, 0x57, 0xdf, 0xe9, 0x0a, 0x26, 0x8d, 0xcd, 0x04, 0xf1, 0x7e, 0x2e,
+        0xa8, 0xd8, 0xcc, 0xd5, 0x57, 0x71, 0xaa, 0x18, 0xec, 0x72, 0x3a, 0xf2, 0xee, 0x45, 0x92, 0xe6
+    ];
+    let pub_y_1: [u8; 32] = [
+        0x75, 0xd4, 0x4b, 0xb8, 0xbc, 0x98, 0xdb, 0x93, 0x24, 0x0f, 0x48, 0x07, 0x7c, 0x63, 0xaa, 0x4b,
+        0x29, 0xd5, 0x9a, 0xa3, 0x35, 0xcf, 0xf4, 0xb2, 0xa0, 0x88, 0x23, 0x4f, 0x69, 0xc2, 0x2e, 0xba
+    ];
+
+    let pub_x_2: [u8; 32] = [
+        0x97, 0x0f, 0xaa, 0x1e, 0xf6, 0xfd, 0xfe, 0xdc, 0xc5, 0x21, 0x56, 0xe4, 0x88, 0x0d, 0x2a, 0x0d,
+        0xce, 0x57, 0xaf, 0xfa, 0xf1, 0x99, 0xe6, 0x60, 0x8e, 0x9b, 0x23, 0xc9, 0xf0, 0x85, 0xd2, 0xd1
+    ];
+    let pub_y_2: [u8; 32] = [
+        0x34, 0x2a, 0x1e, 0xa1, 0xd1, 0x84, 0x38, 0x92, 0x34, 0x7a, 0x8f, 0x9a, 0x0d, 0xcb, 0x09, 0x72,
+        0xfc, 0xd0, 0x3f, 0xe0, 0x17, 0xd2, 0x6c, 0xb2, 0xb4, 0xcd, 0xd4, 0x63, 0xbf, 0x7b, 0x9a, 0xf2
+    ];
+    
+    let result = main(
+        verification_key,
+        proof,
+        public_inputs,
+        key_hash,
+        bob_signature_nonce_1, 
+        bob_signature_nonce_2, 
+        chain_id, 
+        block_number,
+        message_nonce_1,
+        message_nonce_2,
+        pub_x_1,
+        pub_y_1,
+        pub_x_2,
+        pub_y_2,
+        contract_address
+    );
+    
+    println("---- CIRCUIT OUTPUT ----");
+    println("block_number");
+    println(result.0);
+    println("contract_address");
+    println(result.1);
+    println("block_hash");
+    println(result.2);
+    println("nullifier");
+    println(result.3);
+    println("encrypted_balance");
+    println(result.4);
+    println("commit_2_hash");
+    println(result.5);
+    println("alice nullifier");
+    println(result.6);
+    println("alice enc balance");
+    println(result.7);
+    println("alice commit hash");
+    println(result.8);
+    println("alice utility bytes");
+    println(result.9);
+    println("---- END OF CIRCUIT OUTPUT ----");
 }

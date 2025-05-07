@@ -9,6 +9,7 @@ import { useAccount } from 'wagmi';
 import alice_circuit from '@/public/circuits/alice_receipt.json';
 import bob_circuit from '@/public/circuits/bob_recursive.json';
 import { Noir } from '@noir-lang/noir_js';
+import { GAZOMETER_ADDRESS } from '@/app/lib/constants';
 
 interface NoirCircuit {
     bytecode: string;
@@ -80,7 +81,7 @@ export default function ReceiptPage() {
             // Set amount to send from Alice's proof data
             if (proof.alice_proof && proof.alice_proof.publicInputs) {
                 // The amount is in the public inputs array
-                const amountHex = proof.alice_proof.publicInputs[9]; // Assuming amount is at index 9
+                const amountHex = proof.alice_proof.publicInputs[8]; // Assuming amount is at index 9
                 // Convert from hex to wei, then format to ether
                 const amountInWei = BigInt(amountHex);
                 const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
@@ -372,7 +373,7 @@ export default function ReceiptPage() {
             const pubX2Bytes = hexToBytes(pubKeyX2);
             const pubY1Bytes = hexToBytes(pubKeyY1);
             const pubY2Bytes = hexToBytes(pubKeyY2);
-            const contractAddressBytes = hexToBytes("0x582BEE8f43BF203964d38c54FA03e62d616159fA");
+            const contractAddressBytes = hexToBytes(GAZOMETER_ADDRESS);
 
             console.log('Byte array lengths:', {
                 signature1Bytes: signature1Bytes.length,
@@ -494,117 +495,147 @@ export default function ReceiptPage() {
     return (
         <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-white">Receipt Details</h1>
+                <h1 className="text-2xl font-bold mb-6 text-center text-white">Receipt Verification</h1>
 
                 {error && (
-                    <div className="mb-4 p-4 border border-red-500 bg-red-900/50 text-white">
-                        {error}
+                    <div className="mt-4 p-4 bg-red-900/50 rounded-md">
+                        <p className="text-sm text-red-300">{error}</p>
                     </div>
                 )}
 
-                {receipt && (
-                    <div className="space-y-4">
+                {/* Alice's Proof Verification */}
+                <div className="mb-6">
+                    <h2 className="text-lg font-medium text-white mb-4">Alice's Proof Verification</h2>
+                    <button
+                        onClick={verifyAliceProof}
+                        disabled={isVerifying}
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                    >
+                        {isVerifying ? 'Verifying...' : 'Verify Alice\'s Proof'}
+                    </button>
+
+                    {isValidAlice !== null && !isVerifying && (
+                        <div className="mt-4">
+                            <div className={`p-4 rounded-md ${isValidAlice ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
+                                <p className={`text-sm ${isValidAlice ? 'text-green-300' : 'text-red-300'}`}>
+                                    Alice's Proof: {isValidAlice ? '✅ Valid' : '❌ Invalid'}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Bob's Signing Section */}
+                <div className="border-t border-gray-700 pt-6">
+                    <h2 className="text-lg font-medium text-white mb-4">Bob's Signatures</h2>
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-white">
+                            Amount to Send (Ethers)
+                        </label>
+                        <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
+                            {amountToSend || 'Loading...'}
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label htmlFor="nonce" className="block text-sm font-medium text-white">
+                                Nonce
+                            </label>
+                            <input
+                                type="number"
+                                id="nonce"
+                                value={nonce}
+                                onChange={(e) => setNonce(e.target.value)}
+                                className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                        >
+                            {isLoading ? 'Signing...' : 'Sign Messages'}
+                        </button>
+                    </form>
+
+                    <div className="mt-6 space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-white">
-                                Chain ID
+                                Signature 1 (for nonce - 1)
                             </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.chain_id}
+                            <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
+                                {signature1 || 'No signature yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Message Hash: {messageHash1 || 'Not calculated yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Keccak256 Hash: {hash1 || 'Not calculated yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Storage Key: {storageKey1 || 'Not calculated yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key X: {pubKeyX1 || 'Not calculated yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key Y: {pubKeyY1 || 'Not calculated yet'}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key Verified: {isVerified1 ? '✅' : '❌'}
                             </div>
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-white">
-                                Receipt Amount
+                                Signature 2 (for nonce)
                             </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.receipt_amount}
+                            <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
+                                {signature2 || 'No signature yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Public Key X1
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.pub_x_1}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Message Hash: {messageHash2 || 'Not calculated yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Public Key X2
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.pub_x_2}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Public Key Y1
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.pub_y_1}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Keccak256 Hash: {hash2 || 'Not calculated yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Public Key Y2
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.pub_y_2}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key X: {pubKeyX2 || 'Not calculated yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Signature Nonce 1
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.alice_signature_nonce_1}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key Y: {pubKeyY2 || 'Not calculated yet'}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Signature Nonce 2
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.alice_signature_nonce_2}
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Signature 1
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.alice_signature_1}
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Signature 2
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.alice_signature_2}
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-white">
-                                Proof
-                            </label>
-                            <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                                {receipt.proof}
+                            <div className="mt-2 text-sm text-gray-300">
+                                Public Key Verified: {isVerified2 ? '✅' : '❌'}
                             </div>
                         </div>
                     </div>
-                )}
+
+                    {signature1 && signature2 && (
+                        <button
+                            onClick={generateBobProof}
+                            disabled={isProving}
+                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                        >
+                            {isProving ? 'Generating Proof...' : 'Generate Bob\'s Proof'}
+                        </button>
+                    )}
+
+                    {proofSuccess && (
+                        <div className="mt-4 p-4 bg-green-900/50 rounded-md">
+                            <p className="text-sm text-green-300">✅ Proof generated and verified successfully!</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
-} 
+}
