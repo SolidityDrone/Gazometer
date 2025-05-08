@@ -11,6 +11,7 @@ members = [
     "main/gazometer_p2p/alice_receipt",
     "main/gazometer_p2p/bob_recursive",
     "main/gazometer_self/self_service",
-    "lib/noir-lib"
+    "lib/noir-lib",
+    "main/hydraEnc/circuit"
 ]
 default-member = "ethereum/circuits/lib"

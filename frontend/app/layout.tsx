@@ -28,8 +28,8 @@ export default async function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-black text-white`}>
         <MatrixBackground />
-        <Navbar />
         <ContextProvider cookies={cookies}>
+          <Navbar />
           <main className="relative z-10">{children}</main>
         </ContextProvider>
       </body>

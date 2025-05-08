@@ -25,7 +25,7 @@ contract Gazometer is IGazometer {
     }
 
     function initCommit(bytes calldata _proof, bytes32[] calldata _publicInputs) public payable {
-        //require(selfServiceVerifier.verify(_proof, _publicInputs), "SendVerifier: Invalid proof");    
+        require(selfServiceVerifier.verify(_proof, _publicInputs), "SendVerifier: Invalid proof");    
 
         uint256 chainId = uint256(_publicInputs[0]);
         uint256 blockNumber = uint256(_publicInputs[1]);
@@ -54,7 +54,7 @@ contract Gazometer is IGazometer {
             (uint256(truncatedCommitment) << 8) | commitLastByte
         );
 
-        //require(!nullifiers[nullifier], "zkTransfer: contains nullified commitment");
+        require(!nullifiers[nullifier], "zkTransfer: contains nullified commitment");
         require(msg.value == amount, "SendVerifier: Amount mismatch");
         require(chainId == block.chainid, "SendVerifier: Invalid chain id");
         require(contractAddress == address(this), "SendVerifier: Invalid contract address");
@@ -66,7 +66,7 @@ contract Gazometer is IGazometer {
 
 
     function selfService(bytes calldata _proof, bytes32[] calldata _publicInputs) public payable {
-        //require(selfServiceVerifier.verify(_proof, _publicInputs), "SelfServiceVerifier: Invalid proof");
+        require(selfServiceVerifier.verify(_proof, _publicInputs), "SelfServiceVerifier: Invalid proof");
         
         uint256 chainId = uint256(_publicInputs[0]);
         uint256 blockNumber = uint256(_publicInputs[1]);
@@ -95,7 +95,7 @@ contract Gazometer is IGazometer {
             (uint256(truncatedCommitment) << 8) | commitLastByte
         );
 
-        //require(!nullifiers[nullifier], "SelfServiceVerifier: contains nullified commitment");
+        require(!nullifiers[nullifier], "SelfServiceVerifier: contains nullified commitment");
         require(uint(chainId) == block.chainid, "SelfServiceVerifier: Invalid chain id");
         require(_verifyBlockHash(blockHash, blockNumber), "SelfServiceVerifier: Invalid block hash");
         balanceCommitment[commitment] = encryptedBalance;
@@ -112,7 +112,7 @@ contract Gazometer is IGazometer {
 
 
     function zkTransfer(bytes calldata _proof, bytes32[] calldata _publicInputs) public {
-        //require(zkTransferVerifier.verify(_proof, _publicInputs), "zkTransferVerifier: Invalid proof");
+        require(zkTransferVerifier.verify(_proof, _publicInputs), "zkTransferVerifier: Invalid proof");
         uint256 chainId = uint256(_publicInputs[0]);
         
         uint256 blockNumber = uint256(_publicInputs[1]);
@@ -151,7 +151,7 @@ contract Gazometer is IGazometer {
 
         require(chainId == block.chainid, "SelfServiceVerifier: Invalid chain id");
         require(_verifyBlockHash(blockHash, blockNumber), "SelfServiceVerifier: Invalid block hash");
-        // require(!nullifiers[bobNullifier] || !nullifiers[aliceNullifier], "zkTransfer: contains nullified commitment");
+        require(!nullifiers[bobNullifier] || !nullifiers[aliceNullifier], "zkTransfer: contains nullified commitment");
         require(contractAddress == address(this), "zkTransfer: Invalid contract address");
 
         balanceCommitment[bobCommitment] = bobEncryptedBalance;

@@ -55,7 +55,7 @@ fn main(
     contract_address: Address
 ) -> pub (Field, Field, Field, Field, Field, Field, Field, Field, Field, Field) {
 
-    // v this stuff isnt worth wasting my time anymore and will comment out. Imrpove docs and resources thx
+    // need to have a look at it, but rn i must finalize the project
     // verify_proof(verification_key, proof, public_inputs, key_hash);
     // produces: bb: /home/aztec-dev/aztec-packages/barretenberg/cpp/src/barretenberg/stdlib/primitives/bigfield/bigfield_impl.hpp:48: bb::stdlib::bigfield<bb::UltraCircuitBuilder_<bb::UltraExecutionTraceBlocks>, bb::Bn254FqParams>::bigfield(const field_t<Builder> &, const field_t<Builder> &, const bool, const size_t) [Builder = bb::UltraCircuitBuilder_<bb::UltraExecutionTraceBlocks>, T = bb::Bn254FqParams]: Assertion `(uint256_t(low_bits_in.get_value()) < (uint256_t(1) << (NUM_LIMB_BITS * 2)))' failed. Aborted (core dumped)
     

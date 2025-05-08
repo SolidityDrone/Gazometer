@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
-import { useAccount } from 'wagmi';
+import { useAccount, useWriteContract, useTransactionReceipt } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/alice_receipt.json';
@@ -18,19 +18,25 @@ interface NoirCircuit {
 }
 
 // Add this function at the top level, before the SignPage component
-function proofToFields(bytes) {
+function proofToFields(bytes: Uint8Array | string): string[] {
+    const byteArray = typeof bytes === 'string' ? new Uint8Array(Buffer.from(bytes)) : bytes;
     const fields = [];
-    for (let i = 0; i < bytes.length; i += 32) {
+    for (let i = 0; i < byteArray.length; i += 32) {
         const fieldBytes = new Uint8Array(32);
-        const end = Math.min(i + 32, bytes.length);
+        const end = Math.min(i + 32, byteArray.length);
         for (let j = 0; j < end - i; j++) {
-            fieldBytes[j] = bytes[i + j];
+            fieldBytes[j] = byteArray[i + j];
         }
         fields.push(Buffer.from(fieldBytes));
     }
     return fields.map((field) => "0x" + field.toString("hex"));
 }
 
+interface ProofData {
+    alice_proof: any;
+    vkAsFields: any;
+    proofAsFields: string[];
+}
 
 export default function SignPage() {
     // Remove the useEffect and state variables for noir and backend
@@ -56,8 +62,14 @@ export default function SignPage() {
     const [isProving, setIsProving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [receiptLink, setReceiptLink] = useState<string | null>(null);
-
-    const { address } = useAccount();
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [proofVerified, setProofVerified] = useState(false);
+    const [showTxModal, setShowTxModal] = useState(false);
+    const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'error' | null>(null);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+    const [publicInputs, setPublicInputs] = useState<string[] | null>(null);
+    const { writeContract, isPending, isSuccess, data, error: writeError } = useWriteContract();
+    const [isGeneratingArtifacts, setIsGeneratingArtifacts] = useState(false);
 
     const handleSign = async (message: string, isFirstSignature: boolean) => {
         try {
@@ -136,6 +148,7 @@ export default function SignPage() {
 
         try {
             setIsProving(true);
+            setError(null);
 
             // Helper function to convert hex string to byte array
             const hexToBytes = (hex: string) => {
@@ -296,48 +309,75 @@ export default function SignPage() {
 
             const alice_proof = await backend.generateProof(witness);
             console.log('Generated proof:', alice_proof);
-            console.log("proof", await backend.verifyProof(alice_proof));
 
-            const { vkAsFields } = await backend.generateRecursiveProofArtifacts(
-                alice_proof.proof,
-                10,
-            );
+            // Switch to verification state
+            setIsProving(false);
+            setIsVerifying(true);
 
+            // Verify the proof
+            const isVerified = await backend.verifyProof(alice_proof);
+            console.log("proof verification result:", isVerified);
 
-            console.log("vkAsFields generatged");
+            if (isVerified) {
+                setProofVerified(true);
+                const proofBytes = `0x${Buffer.from(alice_proof.proof).toString('hex')}`;
+                const publicInputsArray = alice_proof.publicInputs.slice(0, 11);
 
-            const publicInputElements = 10;
+                // Set the proof state
+                setProof(proofBytes);
+                setPublicInputs(publicInputsArray);
 
-            const proofAsFields = [...alice_proof.publicInputs.slice(publicInputElements), ...proofToFields(alice_proof.proof)];
-            console.log("proof field length", proofAsFields.length);
+                // Switch to generating artifacts state
+                setIsVerifying(false);
+                setIsGeneratingArtifacts(true);
 
-            console.log("proofAsFields generated");
+                const { vkAsFields } = await backend.generateRecursiveProofArtifacts(
+                    alice_proof.proof,
+                    10,
+                );
 
-            const proofData = {
-                alice_proof,
-                vkAsFields,
-                proofAsFields
-            };
+                console.log("vkAsFields generated");
 
-            setProof(JSON.stringify(proofData, null, 2));
+                const publicInputElements = 10;
+                const proofAsFields = [...alice_proof.publicInputs.slice(publicInputElements), ...proofToFields(alice_proof.proof)];
+                console.log("proof field length", proofAsFields.length);
 
-            // Generate a unique ID for this proof
-            const proofId = Math.random().toString(36).substring(2, 15);
+                console.log("proofAsFields generated");
 
-            // Store proof data in localStorage
-            localStorage.setItem(`proof_${proofId}`, JSON.stringify(proofData));
+                const proofData: ProofData = {
+                    alice_proof,
+                    vkAsFields,
+                    proofAsFields
+                };
 
-            // Generate receipt link with just the ID
-            const receiptLink = `${window.location.origin}/receipt/${proofId}`;
-            setReceiptLink(receiptLink);
+                // Set the proof data
+                setProof(JSON.stringify(proofData, null, 2));
+
+                // Generate a unique ID for this proof
+                const proofId = Math.random().toString(36).substring(2, 15);
+
+                // Store proof data in localStorage
+                localStorage.setItem(`proof_${proofId}`, JSON.stringify(proofData));
+
+                // Generate receipt link with just the ID
+                const receiptLink = `${window.location.origin}/receipt/${proofId}`;
+                setReceiptLink(receiptLink);
+
+                // Close modal after 2 seconds
+                setTimeout(() => {
+                    setIsGeneratingArtifacts(false);
+                    setProofVerified(false);
+                }, 2000);
+            } else {
+                throw new Error('Proof verification failed');
+            }
 
         } catch (error) {
             console.error('Error generating proof:', error);
-            if (error instanceof Error) {
-                setError(error.message);
-            } else {
-                setError('Unknown error occurred');
-            }
+            setError(error instanceof Error ? error.message : 'Failed to generate proof');
+            setIsVerifying(false);
+            setProofVerified(false);
+            setIsGeneratingArtifacts(false);
         } finally {
             setIsProving(false);
         }
@@ -382,9 +422,80 @@ export default function SignPage() {
     };
 
     return (
-        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 mt-32">
             <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
-                <h1 className="text-2xl font-bold mb-6 text-center text-white">Message Signing Form</h1>
+                <h1 className="text-2xl font-bold mb-6 text-center text-white">Sign</h1>
+
+                {/* Loading Modal */}
+                {(isProving || isVerifying || isGeneratingArtifacts) && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+                        <div className="bg-gray-900 p-6 shadow-xl flex flex-col items-center border border-green-500">
+                            {isProving && (
+                                <>
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mb-4"></div>
+                                    <p className="text-white text-lg">Generating your proof...</p>
+                                </>
+                            )}
+                            {isVerifying && !proofVerified && (
+                                <>
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mb-4"></div>
+                                    <p className="text-white text-lg">Verifying proof...</p>
+                                </>
+                            )}
+                            {isVerifying && proofVerified && (
+                                <>
+                                    <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mb-4">
+                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                    </div>
+                                    <p className="text-white text-lg">Proof verified successfully!</p>
+                                </>
+                            )}
+                            {isGeneratingArtifacts && (
+                                <>
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mb-4"></div>
+                                    <p className="text-white text-lg">Generating recursive proof artifacts...</p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Transaction Status Modal */}
+                {showTxModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+                        <div className="bg-gray-900 p-6 shadow-xl flex flex-col items-center border border-green-500">
+                            {txStatus === 'pending' && (
+                                <>
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mb-4"></div>
+                                    <p className="text-white text-lg">Transaction pending...</p>
+                                </>
+                            )}
+                            {txStatus === 'success' && (
+                                <>
+                                    <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mb-4">
+                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                    </div>
+                                    <p className="text-white text-lg">Transaction successful!</p>
+                                </>
+                            )}
+                            {txStatus === 'error' && (
+                                <>
+                                    <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center mb-4">
+                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </div>
+                                    <p className="text-white text-lg">Transaction failed</p>
+                                    <p className="text-red-400 text-sm mt-2">{writeError?.message || 'Unknown error occurred'}</p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
@@ -418,28 +529,95 @@ export default function SignPage() {
 
                     <div>
                         <label className="block text-sm font-medium text-white">
-                            Signature 1 (for nonce - 1)
+                            Signature 1
                         </label>
-                        <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                            {signature1 || 'No signature yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Signature: {signature1 ? `${signature1.slice(0, 6)}...${signature1.slice(-4)}` : 'No signature yet'}
+                            </p>
+                            {signature1 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(signature1);
+                                        setCopiedField('signature1');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'signature1'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'signature1' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Message Hash: {messageHash1 || 'Not calculated yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Message Hash: {messageHash1 ? `${messageHash1.slice(0, 6)}...${messageHash1.slice(-4)}` : 'Not calculated yet'}
+                            </p>
+                            {messageHash1 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(messageHash1);
+                                        setCopiedField('messageHash1');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'messageHash1'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'messageHash1' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Recovered Address: {recoveredAddress1 || 'Not recovered yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Recovered Address: {recoveredAddress1 ? `${recoveredAddress1.slice(0, 6)}...${recoveredAddress1.slice(-4)}` : 'Not recovered yet'}
+                            </p>
+                            {recoveredAddress1 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(recoveredAddress1);
+                                        setCopiedField('recoveredAddress1');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'recoveredAddress1'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'recoveredAddress1' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Keccak256 Hash: {hash1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Storage Key: {storageKey1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Public Key X: {pubKeyX1 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Public Key Y: {pubKeyY1 || 'Not calculated yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Commit Hash: {hash1 ? `${hash1.slice(0, 6)}...${hash1.slice(-4)}` : 'Not calculated yet'}
+                            </p>
+                            {hash1 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(hash1);
+                                        setCopiedField('hash1');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'hash1'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'hash1' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
                         <div className="mt-2 text-sm text-gray-300">
                             Public Key Verified: {isVerified1 ? '✅' : '❌'}
@@ -448,25 +626,95 @@ export default function SignPage() {
 
                     <div>
                         <label className="block text-sm font-medium text-white">
-                            Signature 2 (for nonce)
+                            Signature 2
                         </label>
-                        <div className="mt-1 p-2 border border-green-500 bg-gray-800 text-white">
-                            {signature2 || 'No signature yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Signature: {signature2 ? `${signature2.slice(0, 6)}...${signature2.slice(-4)}` : 'No signature yet'}
+                            </p>
+                            {signature2 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(signature2);
+                                        setCopiedField('signature2');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'signature2'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'signature2' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Message Hash: {messageHash2 || 'Not calculated yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Message Hash: {messageHash2 ? `${messageHash2.slice(0, 6)}...${messageHash2.slice(-4)}` : 'Not calculated yet'}
+                            </p>
+                            {messageHash2 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(messageHash2);
+                                        setCopiedField('messageHash2');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'messageHash2'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'messageHash2' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Recovered Address: {recoveredAddress2 || 'Not recovered yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Recovered Address: {recoveredAddress2 ? `${recoveredAddress2.slice(0, 6)}...${recoveredAddress2.slice(-4)}` : 'Not recovered yet'}
+                            </p>
+                            {recoveredAddress2 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(recoveredAddress2);
+                                        setCopiedField('recoveredAddress2');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'recoveredAddress2'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'recoveredAddress2' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Keccak256 Hash: {hash2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Public Key X: {pubKeyX2 || 'Not calculated yet'}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-300">
-                            Public Key Y: {pubKeyY2 || 'Not calculated yet'}
+                        <div className="flex justify-between items-center py-2">
+                            <p className="text-sm text-gray-300">
+                                Commit Hash: {hash2 ? `${hash2.slice(0, 6)}...${hash2.slice(-4)}` : 'Not calculated yet'}
+                            </p>
+                            {hash2 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(hash2);
+                                        setCopiedField('hash2');
+                                        setTimeout(() => setCopiedField(null), 2000);
+                                    }}
+                                    className={`px-3 py-1 text-white text-sm transition-all duration-200 w-20 text-center ${copiedField === 'hash2'
+                                        ? 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]'
+                                        : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                >
+                                    {copiedField === 'hash2' ? 'Copied!' : 'Copy'}
+                                </button>
+                            )}
                         </div>
                         <div className="mt-2 text-sm text-gray-300">
                             Public Key Verified: {isVerified2 ? '✅' : '❌'}
@@ -522,4 +770,8 @@ export default function SignPage() {
             )}
         </div>
     );
-} 
+}
+
+function setPublicInputs(publicInputsArray: any[]) {
+    throw new Error('Function not implemented.');
+}
