@@ -211,10 +211,24 @@ Solo development sometimes can be overwhelming. This project monorepo contained 
 - **Dapp:** Simply improving the application to have a better UX/UI.
 
 **Recap:**
-- Compliance and UX are top priorities for future work.
-- Code optimization and security review are needed.
-- Future plans include contract interactions and Dapp improvements.
+### Compliance and UX are top priorities for future work.
+Reconstructing history is tricky, cause you need to sign multiple nonces till you get a nonce that has got no related commit, therefore the head of your tx chain. This will need to be well thinkered to reflect a better UX
+### Code optimization and security review are needed.
+At current state of the circuits, there are multiple unconstrained functions, and multiple bad pratices probably that could be improved by a lot. Proving in the browser takes few minutes for me, this is due to the expensiveness of proving eth states, improving this is paramount. 
 
+### Future plans include contract interactions and Dapp improvements.
+As for now, i naively stored nonce in a db, just to make a more understandable demo visualization. This could be fine since nonce only dosent leak enough to figure out your informations, but is conceptually wrong
+
+### Add a serious relayer solution
+As for now the relayer is just an embedded wallet into the backend of the Gazometer App, didnt have time to fix this all by myself, but the relayer fee could be included in the circuit and payment dispatched upon proof verification. At the time of writing I must admit I had other priorities in order to timely submit the whole thing.
+
+### Alice and Bob transaction order could be reversed
+Alice should be able to also crete a receipt that express intent to pay, not just an invoice to receive. 
+This is easily doable by just change the logic in the balance calculation. But havent got time to refactor and fix. Remember I did this compeltely as solo dev and first timer ^^, but i'm aware of it 
+ 
+### Some bad thing i did
+
+some feature isnt fully functioning such as recursion, in future i will work to fix what's not working properly and what i misunderstood, wont pretend this project is perfect. It needs a lot of work you should treat this as an experiment and PoC 
 ---
 
 ## Disclaimer
