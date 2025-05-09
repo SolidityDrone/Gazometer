@@ -189,6 +189,9 @@ Once I was confident, I created the `self_service` circuit, which would be used 
 
 ---
 
+### 
+Refactoring return values.. I was returning different types such a u64, u8: 32, bytes32 and Address types ( some from vLayer lib). The problem arised when i figured out i should have returned Fields. The conversion was hard to refactor as i wasnt fully understanding why the values were uncorrect. This mostly cause Field isnt a full 256-bit value, but rather 254 and converting 32 bytes cause incostincies.. So once i figured out i had to slice the last byte off the values i had to return, create a new field that contained the last bytes and reconstruct the commit hash and block hash i needed onchain. Very tricky to figure out what wasnt going on, a good reminder to read well docs before starting to code :)
+
 ### Overall
 
 Solo development sometimes can be overwhelming. This project monorepo contained 4 different repos and they were all interconnected. When working with zkProof, a small mismatch will break the flow and that happened many times. Many hours spent researching, testing, debugging, etc. Frankly, it was both fun and stressful, but one week later I'm definitely enriched in the zk field, which I'm new to.
