@@ -18,24 +18,6 @@ use dep::keccak256::keccak256;
 
 // output chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
 
-fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
-    // Convert it to a field element
-    let mut v = 1;
-    let mut high = 0 as Field;
-    let mut low = 0 as Field;
-
-    for i in 0..15 {
-        // covers bytes 16..30 (31 is truncated and ignored)
-        low = low + (bytes32[15 + 15 - i] as Field) * v;
-        v = v * 256;
-        // covers bytes 0..14
-        high = high + (bytes32[14 - i] as Field) * v;
-    }
-    // covers byte 15
-    low = low + (bytes32[15] as Field) * v;
-
-    low + high * v
-}
 
 
 
@@ -143,9 +125,31 @@ fn main(
         encrypted_final_balance, // <-- balance destined for commit_2
         field_from_bytes_32_trunc(commit_2_hash),
         receipt_amount,
-        last_bytes  // New field containing the last bytes
+        last_bytes  
     )
 }
+
+
+
+fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
+    // Convert it to a field element
+    let mut v = 1;
+    let mut high = 0 as Field;
+    let mut low = 0 as Field;
+
+    for i in 0..15 {
+        // covers bytes 16..30 (31 is truncated and ignored)
+        low = low + (bytes32[15 + 15 - i] as Field) * v;
+        v = v * 256;
+        // covers bytes 0..14
+        high = high + (bytes32[14 - i] as Field) * v;
+    }
+    // covers byte 15
+    low = low + (bytes32[15] as Field) * v;
+
+    low + high * v
+}
+
 
 // Define a larger key size that can accommodate the nibble conversion of a 32-byte key
 global LARGER_KEY_SIZE: u32 = 132; // 2 * 32 + 68 (extra space for prefix)

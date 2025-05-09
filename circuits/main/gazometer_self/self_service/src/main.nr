@@ -19,78 +19,6 @@ use dep::keccak256::keccak256;
 // output chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
 
 
-// Helper function to create 64-byte signature from 65-byte input
-fn create_64_byte_signature(signature: [u8; 65]) -> [u8; 64] {
-    let mut sig_64: [u8; 64] = [0; 64];
-    for i in 0..64 {
-        sig_64[i] = signature[i];
-    }
-    sig_64
-}
-
-// Helper function to compute storage key
-fn compute_storage_key(commit_hash: [u8; 32], balance_commit_slot: u8) -> [u8; 32] {
-    let mut key_and_slot: [u8; 64] = [0; 64];
-    for i in 0..32 {
-        key_and_slot[i] = commit_hash[i];
-    }
-    key_and_slot[63] = balance_commit_slot;
-    keccak256(key_and_slot, 64)
-}
-
-// Helper function to compute final balance
-fn compute_final_balance(
-    decrypt_signature: [u8; 65],  // Signature to decrypt with (sig1)
-    encrypt_signature: [u8; 65],  // Signature to encrypt with (sig2)
-    encrypted_balance: Field,
-    amount: Field,
-    is_addition: bool
-) -> Field {
-    let iv = [0, 0, 0, 0];
-
-    // 1. Decrypt the balance using sig1
-    let decrypted_balance = decrypt_balance(decrypt_signature, encrypted_balance);
-
-    // 2. Apply amount operation (add or subtract)
-    let new_balance = if is_addition {
-        decrypted_balance + amount
-    } else {
-        // For withdrawals, ensure we have enough balance
-        let balance_u64 = decrypted_balance as u64;
-        let amount_u64 = amount as u64;
-        assert(balance_u64 >= amount_u64, "Insufficient balance for withdrawal");
-        decrypted_balance - amount
-    };
- 
-    // 3. Encrypt the new balance using sig2
-    let new_key = derive_key_from_signature(encrypt_signature);
-    let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
-    let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
-
-    
-    encrypted_fields[0]
-}
-
-
-fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
-    // Convert it to a field element
-    let mut v = 1;
-    let mut high = 0 as Field;
-    let mut low = 0 as Field;
-
-    for i in 0..15 {
-        // covers bytes 16..30 (31 is truncated and ignored)
-        low = low + (bytes32[15 + 15 - i] as Field) * v;
-        v = v * 256;
-        // covers bytes 0..14
-        high = high + (bytes32[14 - i] as Field) * v;
-    }
-    // covers byte 15
-    low = low + (bytes32[15] as Field) * v;
-
-    low + high * v
-}
-
 fn main(
     user_signature_nonce_1: [u8; 65],
     user_signature_nonce_2: [u8; 65],
@@ -202,6 +130,80 @@ fn main(
         last_bytes  // New field containing the last bytes
     )
 }
+
+
+// Helper function to create 64-byte signature from 65-byte input
+fn create_64_byte_signature(signature: [u8; 65]) -> [u8; 64] {
+    let mut sig_64: [u8; 64] = [0; 64];
+    for i in 0..64 {
+        sig_64[i] = signature[i];
+    }
+    sig_64
+}
+
+// Helper function to compute storage key
+fn compute_storage_key(commit_hash: [u8; 32], balance_commit_slot: u8) -> [u8; 32] {
+    let mut key_and_slot: [u8; 64] = [0; 64];
+    for i in 0..32 {
+        key_and_slot[i] = commit_hash[i];
+    }
+    key_and_slot[63] = balance_commit_slot;
+    keccak256(key_and_slot, 64)
+}
+
+// Helper function to compute final balance
+fn compute_final_balance(
+    decrypt_signature: [u8; 65],  // Signature to decrypt with (sig1)
+    encrypt_signature: [u8; 65],  // Signature to encrypt with (sig2)
+    encrypted_balance: Field,
+    amount: Field,
+    is_addition: bool
+) -> Field {
+    let iv = [0, 0, 0, 0];
+
+    // 1. Decrypt the balance using sig1
+    let decrypted_balance = decrypt_balance(decrypt_signature, encrypted_balance);
+
+    // 2. Apply amount operation (add or subtract)
+    let new_balance = if is_addition {
+        decrypted_balance + amount
+    } else {
+        // For withdrawals, ensure we have enough balance
+        let balance_u64 = decrypted_balance as u64;
+        let amount_u64 = amount as u64;
+        assert(balance_u64 >= amount_u64, "Insufficient balance for withdrawal");
+        decrypted_balance - amount
+    };
+ 
+    // 3. Encrypt the new balance using sig2
+    let new_key = derive_key_from_signature(encrypt_signature);
+    let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
+    let encrypted_fields = enc::encrypt(balance_fields, new_key, iv);
+
+    
+    encrypted_fields[0]
+}
+
+
+fn field_from_bytes_32_trunc(bytes32: [u8; 32]) -> Field {
+    // Convert it to a field element
+    let mut v = 1;
+    let mut high = 0 as Field;
+    let mut low = 0 as Field;
+
+    for i in 0..15 {
+        // covers bytes 16..30 (31 is truncated and ignored)
+        low = low + (bytes32[15 + 15 - i] as Field) * v;
+        v = v * 256;
+        // covers bytes 0..14
+        high = high + (bytes32[14 - i] as Field) * v;
+    }
+    // covers byte 15
+    low = low + (bytes32[15] as Field) * v;
+
+    low + high * v
+}
+
 
 // Define a larger key size that can accommodate the nibble conversion of a 32-byte key
 global LARGER_KEY_SIZE: u32 = 132; // 2 * 32 + 68 (extra space for prefix)
