@@ -162,7 +162,7 @@ export default function Navbar() {
                                     : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
                                     }`}
                             >
-                                Sign
+                                Craft receipt
                             </Link>
                             <Link
                                 href="/self-service"
@@ -171,7 +171,7 @@ export default function Navbar() {
                                     : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
                                     }`}
                             >
-                                Self Service
+                                Deposit / Withdraw
                             </Link>
                             {address && nonce !== null && (
                                 <>
