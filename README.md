@@ -1,3 +1,7 @@
+| |
+|:---:|
+| ![Demo image](https://github.com/user-attachments/assets/36b6cbaf-7efb-42bf-9ae4-73c130278494) |
+
 # Gazometer
 
 Gazometer is a privacy-first zk payment protocol that leverages Noir Lang to integrate a simple yet effective privacy mechanic.
@@ -7,6 +11,8 @@ Gazometer is a privacy-first zk payment protocol that leverages Noir Lang to int
 The technical goal of the project is to deliver a protocol that allows users to exchange value while preserving their privacy. Privacy is maintained thanks to Noir's unique features. User identities are kept safe, and balance changes between participants don't actually happen as Ether transfers, but rather as state changes in the contract. From the outside, no one is able to tell how much is being transferred or who is participating in the transaction.
 
 Ideally, these transactions are supposed to be relayed, but can eventually be self-relayed for demonstration purposes. The relayer RPC-Server is not included in this repository.
+
+[![Demo video](https://img.youtube.com/vi/RnEPjEJTDDg/0.jpg)](https://www.youtube.com/watch?v=RnEPjEJTDDg)
 
 **Recap:**
 - Users exchange value privately.
