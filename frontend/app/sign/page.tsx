@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
 import { useAccount, useWriteContract, useTransactionReceipt } from 'wagmi';
+import { PrismaClient } from '@prisma/client'; // Import Prisma Client
 
 import circuit from '@/public/circuits/alice_receipt.json';
 import { GAZOMETER_ADDRESS } from '@/lib/constants';
@@ -38,6 +39,8 @@ interface ProofData {
     proofAsFields: string;
     inputsAsFields: any;
 }
+
+const prisma = new PrismaClient(); // Initialize Prisma Client
 
 export default function SignPage() {
     // Remove the useEffect and state variables for noir and backend
@@ -369,11 +372,16 @@ export default function SignPage() {
                 // Generate a unique ID for this proof
                 const proofId = Math.random().toString(36).substring(2, 15);
 
-                // Store proof data in localStorage
-                localStorage.setItem(`proof_${proofId}`, JSON.stringify(proofData));
+                // Store proof data in the database
+                const proofDataString = JSON.stringify(proofData); // Convert proof data to string
+                const receipt = await prisma.receipt.create({
+                    data: {
+                        proofData: proofDataString, // Save proof data
+                    },
+                });
 
-                // Generate receipt link with just the ID
-                const receiptLink = `${window.location.origin}/receipt/${proofId}`;
+                // Generate receipt link with the ID
+                const receiptLink = `${window.location.origin}/receipt/${receipt.id}`;
                 setReceiptLink(receiptLink);
 
                 // Close modal after 2 seconds

@@ -19,6 +19,7 @@ type ResolveForeignCallParams = {
   inputs: string[];
   root_path: string;
   package_name: string;
+  caller?: string; // Optional caller identifier
 };
 
 // Define the server methods including resolve_foreign_call
@@ -38,14 +39,12 @@ jsonRPCServer.addMethod('get_storage_recursive', getOracleHandler.bind(this, get
 jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCallParams[], { client }: ServerParams) => {
   console.log("resolve_foreign_call called with params:", JSON.stringify(params, null, 2));
 
-  // The first parameter contains the function name and inputs
   const param = params[0];
   if (!param) {
     console.error("No parameters provided");
     throw new Error("No parameters provided");
   }
 
-  // Extract the function name from params
   const functionName = param.function;
   console.log("Function name:", functionName);
 
@@ -54,18 +53,33 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
     throw new Error("Function name is undefined");
   }
 
-  // Check if this is a request for both block header and account
+  // Determine the caller
+  const caller = param.caller || 'unknown'; // Default to 'unknown' if not provided
+
+  // Process based on the caller
+  if (caller === 'next') {
+    // Logic for Next.js requests
+    // Extract parameters for Next.js
+    // (Similar to your existing logic for Next.js)
+  } else if (caller === 'nargo') {
+    // Logic for nargo execute requests
+    // (Similar to your existing logic for nargo)
+  } else {
+    console.error(`Unknown caller: ${caller}`);
+    throw new Error(`Unknown caller: ${caller}`);
+  }
+
+  // Common logic for both cases can go here if applicable
+
+  // Example of processing for get_block_header_and_account
   if (functionName === 'get_block_header_and_account') {
     console.log("Processing get_block_header_and_account request");
 
-    // Extract parameters
     const chainId = '0x' + param.inputs[0];
     const blockNumber = '0x' + param.inputs[1];
+    const addressInput = param.inputs[2];
 
     // Process address input
-    const addressInput = param.inputs[2];
-    console.log("Address input type:", typeof addressInput, Array.isArray(addressInput) ? "array" : "not array");
-
     let addressBytes;
     if (Array.isArray(addressInput)) {
       // If it's already an array, convert each decimal number to hex string
@@ -123,23 +137,12 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
     console.log("Processed address bytes:", addressBytes);
 
     try {
-      // Get block header
       const headerArgs = [[chainId], [blockNumber]];
       const blockHeader = await getHeaderOracle(client, headerArgs);
-
-
-      // Get account data
       const accountArgs = [[chainId], [blockNumber], addressBytes];
       const accountData = await getAccountOracle(client, accountArgs);
 
-
-      // Return both results
-      return {
-        values: {
-          blockHeader,
-          accountData
-        }
-      };
+      return { values: { blockHeader, accountData } };
     } catch (error) {
       console.error("Error in get_block_header_and_account:", error);
       throw error;

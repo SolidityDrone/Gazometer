@@ -17,6 +17,8 @@
     "generate-get-storage-proof": "tsx src/script/generateGetStorageProof",
     "oracle-server": "tsx src/script/startOracleServer",
     "oracle-server:watch": "tsx watch src/script/startOracleServer",
+    "oracle-server:watch-next": "tsx watch src/script/startOracleServer.ts next",
+    "oracle-server:watch-nargo": "tsx watch src/script/startOracleServer.ts nargo",
     "prepare-fixtures": "yarn prepare-js-fixtures && yarn prepare-noir-fixtures",
     "prepare-js-fixtures": "tsx src/script/prepareJSHistoryAPIFixtures",
     "prepare-noir-fixtures": "rm -rf ../circuits/lib/src/fixtures && tsx src/script/prepareNoirHistoryAPIFixtures && tsx src/script/prepareMerkleProofFixtures"

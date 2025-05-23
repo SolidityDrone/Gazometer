@@ -68,19 +68,11 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
     let addressBytes;
     if (Array.isArray(addressInput)) {
-      // If it's already an array, extract the last byte from each element
+      // If it's already an array, convert each decimal number to hex string
       addressBytes = addressInput.map(byte => {
-        // Remove any whitespace
-        byte = byte.trim();
-
-        // If the byte already has 0x prefix, just return it
-        if (byte.startsWith('0x')) {
-          // Extract the last two characters (one byte) from the hex string
-          return '0x' + byte.slice(-2);
-        }
-
-        // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byte.slice(-2);
+        // Convert decimal to hex and ensure it's two digits
+        const hexStr = Number(byte).toString(16).padStart(2, '0');
+        return '0x' + hexStr;
       });
 
       // Ensure we have exactly 20 bytes
@@ -189,19 +181,11 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
     let addressBytes;
     if (Array.isArray(addressInput)) {
-      // If it's already an array, extract the last byte from each element
+      // If it's already an array, convert each decimal number to hex string
       addressBytes = addressInput.map(byte => {
-        // Remove any whitespace
-        byte = byte.trim();
-
-        // If the byte already has 0x prefix, just return it
-        if (byte.startsWith('0x')) {
-          // Extract the last two characters (one byte) from the hex string
-          return '0x' + byte.slice(-2);
-        }
-
-        // Otherwise, add 0x prefix and extract the last two characters
-        return '0x' + byte.slice(-2);
+        // Convert decimal to hex and ensure it's two digits
+        const hexStr = Number(byte).toString(16).padStart(2, '0');
+        return '0x' + hexStr;
       });
 
       // Ensure we have exactly 20 bytes
@@ -261,23 +245,12 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
       let storageKeyBytes;
       if (Array.isArray(storageKeyInput)) {
-
-        // If it's already an array, extract the last byte from each 32-byte hex string
+        // If it's already an array, convert each decimal number to hex string
         storageKeyBytes = storageKeyInput.map(byte => {
-          // Remove any whitespace
-          byte = byte.trim();
-
-          // If the byte already has 0x prefix, just return it
-          if (byte.startsWith('0x')) {
-            // Extract the last two characters (one byte) from the hex string
-            return '0x' + byte.slice(-2);
-          }
-
-          // Otherwise, add 0x prefix and extract the last two characters
-          return '0x' + byte.slice(-2);
+          // Convert decimal to hex and ensure it's two digits
+          const hexStr = Number(byte).toString(16).padStart(2, '0');
+          return '0x' + hexStr;
         });
-
-        console.log("CODDIO", storageKeyBytes)
 
         // Ensure we have exactly 32 bytes
         if (storageKeyBytes.length !== 32) {
@@ -309,7 +282,7 @@ jsonRPCServer.addMethod('resolve_foreign_call', async (params: ResolveForeignCal
 
         // Ensure we have exactly 32 bytes
         if (storageKeyBytes.length !== 32) {
-
+          console.log(`Warning: Storage key has ${storageKeyBytes.length} bytes, expected 32`);
           // If we have more than 32 bytes, take only the first 32
           if (storageKeyBytes.length > 32) {
             storageKeyBytes = storageKeyBytes.slice(0, 32);
@@ -382,11 +355,8 @@ export function buildOracleServer(
         await reply.status(HTTP_STATUS_NO_CONTENT).send();
       }
     });
+
   });
 
   return app;
-
 }
-
-
-
