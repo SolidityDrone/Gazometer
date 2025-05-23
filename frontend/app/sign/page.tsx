@@ -369,19 +369,21 @@ export default function SignPage() {
                 // Set the proof data
                 setProof(JSON.stringify(proofData, null, 2));
 
-                // Generate a unique ID for this proof
-                const proofId = Math.random().toString(36).substring(2, 15);
-
-                // Store proof data in the database
-                const proofDataString = JSON.stringify(proofData); // Convert proof data to string
-                const receipt = await prisma.receipt.create({
-                    data: {
-                        proofData: proofDataString, // Save proof data
+                // Call the API route to create a receipt
+                const response = await fetch('/api/createReceipt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
                     },
+                    body: JSON.stringify({ proofData }),
                 });
 
-                // Generate receipt link with the ID
-                const receiptLink = `${window.location.origin}/receipt/${receipt.id}`;
+                if (!response.ok) {
+                    throw new Error('Failed to create receipt');
+                }
+
+                const { id } = await response.json();
+                const receiptLink = `${window.location.origin}/receipt/${id}`;
                 setReceiptLink(receiptLink);
 
                 // Close modal after 2 seconds

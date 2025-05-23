@@ -84,44 +84,55 @@ export default function ReceiptPage() {
     };
 
     useEffect(() => {
-        // Load proof data from localStorage
-        const proofId = params.id as string;
-        const storedProof = localStorage.getItem(`proof_${proofId}`);
+        const fetchReceipt = async () => {
+            const proofId = params.id as string;
 
-        if (storedProof) {
-            const proof = JSON.parse(storedProof);
-            setStoredProofData(proof);
+            try {
+                const response = await fetch(`/api/getReceipt?id=${proofId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch receipt');
+                }
 
-            // Set amount to send from Alice's proof data
-            if (proof.alice_proof && proof.alice_proof.publicInputs) {
-                // The amount is in the public inputs array
-                const amountHex = proof.alice_proof.publicInputs[1]; // Assuming amount is at index 9
-                // Convert from hex to wei, then format to ether
-                const amountInWei = BigInt(amountHex);
-                const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
-                setAmountToSend(amountInEth);
+                const receipt = await response.json();
+                console.log('Received receipt data:', receipt);
+                setStoredProofData(receipt);
+
+                // Set amount to send from Alice's proof data
+                if (receipt.alice_proof && receipt.alice_proof.publicInputs) {
+                    // The amount is in the public inputs array
+                    const amountHex = receipt.alice_proof.publicInputs[1]; // Assuming amount is at index 9
+                    // Convert from hex to wei, then format to ether
+                    const amountInWei = BigInt(amountHex);
+                    const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
+                    setAmountToSend(amountInEth);
+                }
+
+                // Extract and set signature data
+                if (receipt.alice_proof) {
+                    setSignature1(receipt.alice_proof.signature1 || '');
+                    setSignature2(receipt.alice_proof.signature2 || '');
+                    setRecoveredAddress1(receipt.alice_proof.recoveredAddress1 || '');
+                    setRecoveredAddress2(receipt.alice_proof.recoveredAddress2 || '');
+                    setHash1(receipt.alice_proof.hash1 || '');
+                    setHash2(receipt.alice_proof.hash2 || '');
+                    setMessageHash1(receipt.alice_proof.messageHash1 || '');
+                    setMessageHash2(receipt.alice_proof.messageHash2 || '');
+                    setStorageKey1(receipt.alice_proof.storageKey1 || '');
+                    setPubKeyX1(receipt.alice_proof.pubKeyX1 || '');
+                    setPubKeyY1(receipt.alice_proof.pubKeyY1 || '');
+                    setPubKeyX2(receipt.alice_proof.pubKeyX2 || '');
+                    setPubKeyY2(receipt.alice_proof.pubKeyY2 || '');
+                    setIsVerified1(receipt.alice_proof.isVerified1 || false);
+                    setIsVerified2(receipt.alice_proof.isVerified2 || false);
+                    setNonce(receipt.alice_proof.nonce || '');
+                }
+            } catch (error) {
+                console.error('Error fetching receipt:', error);
+                setError(error instanceof Error ? error.message : 'Failed to fetch receipt');
             }
+        };
 
-            // Extract and set signature data
-            if (proof.alice_proof) {
-                setSignature1(proof.alice_proof.signature1 || '');
-                setSignature2(proof.alice_proof.signature2 || '');
-                setRecoveredAddress1(proof.alice_proof.recoveredAddress1 || '');
-                setRecoveredAddress2(proof.alice_proof.recoveredAddress2 || '');
-                setHash1(proof.alice_proof.hash1 || '');
-                setHash2(proof.alice_proof.hash2 || '');
-                setMessageHash1(proof.alice_proof.messageHash1 || '');
-                setMessageHash2(proof.alice_proof.messageHash2 || '');
-                setStorageKey1(proof.alice_proof.storageKey1 || '');
-                setPubKeyX1(proof.alice_proof.pubKeyX1 || '');
-                setPubKeyY1(proof.alice_proof.pubKeyY1 || '');
-                setPubKeyX2(proof.alice_proof.pubKeyX2 || '');
-                setPubKeyY2(proof.alice_proof.pubKeyY2 || '');
-                setIsVerified1(proof.alice_proof.isVerified1 || false);
-                setIsVerified2(proof.alice_proof.isVerified2 || false);
-                setNonce(proof.alice_proof.nonce || '');
-            }
-        }
+        fetchReceipt();
     }, [params.id]);
 
     useEffect(() => {
@@ -290,6 +301,8 @@ export default function ReceiptPage() {
             setError(null);
             setIsValidAlice(null);
 
+            console.log('Stored proof data:', storedProofData);
+
             if (!storedProofData) {
                 throw new Error('No proof data available');
             }
@@ -299,6 +312,7 @@ export default function ReceiptPage() {
 
             // Verify Alice's proof
             if (!storedProofData.alice_proof) {
+                console.log('Missing alice_proof in storedProofData:', storedProofData);
                 throw new Error('Invalid Alice proof data structure');
             }
             const aliceProofArray = new Uint8Array(Object.values(storedProofData.alice_proof.proof));

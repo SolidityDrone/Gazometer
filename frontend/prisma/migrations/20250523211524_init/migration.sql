@@ -1,0 +1,18 @@
+-- CreateTable
+CREATE TABLE "User" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "address" TEXT NOT NULL,
+    "nonce" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Receipt" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "proofData" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_address_key" ON "User"("address");
