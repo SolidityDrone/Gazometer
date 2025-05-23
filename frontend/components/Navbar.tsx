@@ -9,8 +9,8 @@ import { createWalletClient, custom, keccak256, stringToHex } from 'viem';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/lib.json';
-import { GAZOMETER_ADDRESS } from '@/app/lib/constants';
-import { GAZOMETER_ABI } from '@/app/lib/abi/gazometerABI';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
+import { GAZOMETER_ABI } from '@/lib/abi/gazometerABI';
 import { sepolia } from 'viem/chains';
 interface NoirCircuit {
     bytecode: string;

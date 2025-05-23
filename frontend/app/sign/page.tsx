@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import { createWalletClient, custom, recoverMessageAddress, keccak256, stringToHex, concat, pad, toHex, recoverPublicKey, createPublicClient, http } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
 import { useAccount, useWriteContract, useTransactionReceipt } from 'wagmi';
-import { Noir } from '@noir-lang/noir_js';
-import { UltraHonkBackend } from '@aztec/bb.js';
-import circuit from '@/public/circuits/alice_receipt.json';
-import { GAZOMETER_ADDRESS } from '../lib/constants';
 
+import circuit from '@/public/circuits/alice_receipt.json';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
+import { Barretenberg, RawBuffer, UltraHonkBackend } from "@aztec/bb.js";
+import { CompiledCircuit, Noir } from "@noir-lang/noir_js";
 // Add type for the circuit
 interface NoirCircuit {
     bytecode: string;
@@ -35,7 +35,8 @@ function proofToFields(bytes: Uint8Array | string): string[] {
 interface ProofData {
     alice_proof: any;
     vkAsFields: any;
-    proofAsFields: string[];
+    proofAsFields: string;
+    inputsAsFields: any;
 }
 
 export default function SignPage() {
@@ -301,7 +302,7 @@ export default function SignPage() {
 
             // Initialize Noir and backend
             const noir = new Noir(circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            const backend = new UltraHonkBackend((circuit as CompiledCircuit).bytecode, { threads: 2 }, { recursive: true });
 
             // Generate the proof
             const { witness } = await noir.execute(inputs, foreignCallHandler);
@@ -321,7 +322,7 @@ export default function SignPage() {
             if (isVerified) {
                 setProofVerified(true);
                 const proofBytes = `0x${Buffer.from(alice_proof.proof).toString('hex')}`;
-                const publicInputsArray = alice_proof.publicInputs.slice(0, 11);
+                const publicInputsArray = alice_proof.publicInputs.slice(0, 8);
 
                 // Set the proof state
                 setProof(proofBytes);
@@ -331,24 +332,36 @@ export default function SignPage() {
                 setIsVerifying(false);
                 setIsGeneratingArtifacts(true);
 
-                const { vkAsFields } = await backend.generateRecursiveProofArtifacts(
-                    alice_proof.proof,
-                    10,
-                );
+                const { proof: innerProofFields, publicInputs: innerPublicInputs } = await backend.generateProofForRecursiveAggregation(witness);
 
-                console.log("vkAsFields generated");
-
-                const publicInputElements = 10;
+                const publicInputElements = 8;
                 const proofAsFields = [...alice_proof.publicInputs.slice(publicInputElements), ...proofToFields(alice_proof.proof)];
                 console.log("proof field length", proofAsFields.length);
 
                 console.log("proofAsFields generated");
 
+                const innerCircuitVerificationKey = await backend.getVerificationKey();
+                if (!innerCircuitVerificationKey) {
+                    throw new Error('Verification key could not be retrieved');
+                }
+
+                const barretenbergAPI = await Barretenberg.new({ threads: 1 });
+                const vkAsFields = (await barretenbergAPI.acirVkAsFieldsUltraHonk(new RawBuffer(innerCircuitVerificationKey))).map(field => field.toString());
+
+                if (!vkAsFields) {
+                    throw new Error('vkAsFields is undefined');
+                }
+
                 const proofData: ProofData = {
                     alice_proof,
                     vkAsFields,
-                    proofAsFields
+                    proofAsFields: innerProofFields,
+                    inputsAsFields: innerPublicInputs
                 };
+
+                console.log("proofdata", proofData);
+
+
 
                 // Set the proof data
                 setProof(JSON.stringify(proofData, null, 2));

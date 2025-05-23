@@ -21,26 +21,25 @@ use dep::std::verify_proof;
 fn main(
     verification_key: [Field; 128],
     proof: [Field; 456],
-    public_inputs: [Field; 10],
+    public_inputs: [Field; 8],
     key_hash: Field,
     bob_signature_nonce_1: [u8; 65],
     bob_signature_nonce_2: [u8; 65],
     chain_id: pub Field,
-    block_number:  u64,
+    block_number: u64,
     message_nonce_1: u64,
-    message_nonce_2: u64,
     pub_x_1: [u8; 32],
     pub_y_1: [u8; 32],
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
     contract_address: Address
-) -> pub (Field, Field, Field, Field, Field, Field, Field, Field, Field, Field) {
+) -> pub (Field, Field, Field, Field, Field, Field,  Field, Field) {
 
-    // need to have a look at it, but rn i must finalize the project
-    // verify_proof(verification_key, proof, public_inputs, key_hash);
-    // produces: bb: /home/aztec-dev/aztec-packages/barretenberg/cpp/src/barretenberg/stdlib/primitives/bigfield/bigfield_impl.hpp:48: bb::stdlib::bigfield<bb::UltraCircuitBuilder_<bb::UltraExecutionTraceBlocks>, bb::Bn254FqParams>::bigfield(const field_t<Builder> &, const field_t<Builder> &, const bool, const size_t) [Builder = bb::UltraCircuitBuilder_<bb::UltraExecutionTraceBlocks>, T = bb::Bn254FqParams]: Assertion `(uint256_t(low_bits_in.get_value()) < (uint256_t(1) << (NUM_LIMB_BITS * 2)))' failed. Aborted (core dumped)
-    
+
+    verify_proof(verification_key, proof, public_inputs, key_hash);
+
     // ---- Check nonce are valid ------ //
+    let message_nonce_2 = message_nonce_1 + 1;
     let hashed_message_1 = hash_u64(message_nonce_1);
     let hashed_message_2 = hash_u64(message_nonce_2);
     
@@ -98,13 +97,25 @@ fn main(
     // But since we use 1 commit 1 derived key we get rid of this iussue
     
     // 1) decrypt balanceCommit for n-1 
-    let iv = [0, 0, 0, 0];
+    let iv = [
+        message_nonce_1 as Field, 
+        bytes_to_field(pub_x_1), 
+        bytes_to_field(pub_y_1), 
+        0
+    ];
     let nonce_1_derived_key = derive_key_from_signature(bob_signature_nonce_1);
     let encrypted_balance = safe_storage_to_field(commit_1_verified_storage.values[0]);
     let decrypted_1_balance_commit_balance = 
         decrypt_balance(bob_signature_nonce_1, encrypted_balance);
-    // 2) add receipt_amount to the decrypted balanceCommit for n-1 
-    let new_balance = decrypted_1_balance_commit_balance - public_inputs[8];
+
+    // Assuming public_inputs[8] is the receipt_amount as a Field
+    let receipt_amount_field = public_inputs[1];
+
+  
+
+    // Adjust balance based on receipt_amount
+    let new_balance = (receipt_amount_field); // Subtract the positive value
+
     // 3) encrypt the new balance with sign(n)
     let new_key = derive_key_from_signature(bob_signature_nonce_2);
     let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
@@ -114,28 +125,24 @@ fn main(
     // nullifier serve to prevent double spending of same state, we dont need to check
     // storage value for it, this pass to bob. If nullifier already exist bob's proof will be 
     // rejected in the smart contract
-    let nullifier = keccak256(keccak256(hex_bytes_to_ascii(bob_signature_nonce_2), 132), 32);
-    
     let block_hash_last_byte = commit_1_verified_storage.block_hash[31] as Field;
     let commit_hash_last_byte = commit_2_hash[31] as Field;
     let last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
 
     // Combine last_bytes with public_inputs[9] by multiplying last_bytes by 2^16
     // This achieves the same effect as a left shift but works with Field arithmetic
-    let combined_bytes = (last_bytes * 65536) + public_inputs[9];
+    let combined_bytes = (last_bytes * 65536) + public_inputs[7];
 
     // return chain_id, block_number, keccak(sign(n))[commit2], encrypted_FinalBalance
     (
         block_number as Field,
         address_to_field(contract_address),
         field_from_bytes_32_trunc(commit_1_verified_storage.block_hash),
-        bytes_to_field(nullifier),
-        encrypted_final_balance,
+        encrypted_fields[0],
         field_from_bytes_32_trunc(commit_2_hash),
-        public_inputs[5],  // alice nullifier
-        public_inputs[6], // alice enc balance  
-        public_inputs[7], // alice commit hash 
-        combined_bytes // combined last_bytes and public_inputs[9]
+        public_inputs[5], // alice enc balance  
+        public_inputs[6], // alice commit 
+        combined_bytes // 0x00..<commit, block><commit, block> slices 
     )
 }
 
@@ -383,17 +390,15 @@ fn test_init() {
     let key_hash: Field = 0;
     
     // Public inputs - using direct hex values converted to Field
-    let public_inputs: [Field; 10] = [
+    let public_inputs: [Field; 8] = [
         0xaa36a7,
-        0x1,
+        0x64,
         0x7e47cc,
         0x69e4b38e6c08bd6467a703a17cd77acb0badfa66,
         0x6b94e5a8d9399817c935e4f76e2540baca94bc739afd85ee393833e95fc462,
-        0x305ba7452ffa6eba5c58ca6161471c205a862c290c8bc637c2056c84fe1101,
         0x211ba0c0b6ee0f11e6894da524fe8e9919f8d5faa6fd7e4a536d4e8e17004eef,
         0x48fc0df33948d28957d5f62ee17643b0311d4dda43f2cf747839703c52f380,
-        0x1,
-        0xb298
+        0x64
     ];
 
     // Signatures (65 bytes) - keeping the same signatures as they're test values
@@ -431,7 +436,7 @@ fn test_init() {
         0xfc, 0xd0, 0x3f, 0xe0, 0x17, 0xd2, 0x6c, 0xb2, 0xb4, 0xcd, 0xd4, 0x63, 0xbf, 0x7b, 0x9a, 0xf2
     ];
     
-    let result = main(
+    let (block_number_field, contract_address_field, block_hash_field, encrypted_balance_field, commit_2_hash_field, alice_enc_balance_field, alice_commit_hash_field, combined_bytes_field) = main(
         verification_key,
         proof,
         public_inputs,
@@ -441,7 +446,6 @@ fn test_init() {
         chain_id, 
         block_number,
         message_nonce_1,
-        message_nonce_2,
         pub_x_1,
         pub_y_1,
         pub_x_2,
@@ -451,24 +455,22 @@ fn test_init() {
     
     println("---- CIRCUIT OUTPUT ----");
     println("block_number");
-    println(result.0);
+    println(block_number_field);
     println("contract_address");
-    println(result.1);
+    println(contract_address_field);
     println("block_hash");
-    println(result.2);
-    println("nullifier");
-    println(result.3);
+    println(block_hash_field);
     println("encrypted_balance");
-    println(result.4);
+    println(encrypted_balance_field);
     println("commit_2_hash");
-    println(result.5);
-    println("alice nullifier");
-    println(result.6);
+    println(commit_2_hash_field);
+
     println("alice enc balance");
-    println(result.7);
+    println(alice_enc_balance_field);
     println("alice commit hash");
-    println(result.8);
+    println(alice_commit_hash_field);
     println("alice utility bytes");
-    println(result.9);
+    println(combined_bytes_field);
+  
     println("---- END OF CIRCUIT OUTPUT ----");
 }

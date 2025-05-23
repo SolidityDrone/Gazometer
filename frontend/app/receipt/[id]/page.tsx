@@ -9,8 +9,8 @@ import { useAccount, useWriteContract } from 'wagmi';
 import alice_circuit from '@/public/circuits/alice_receipt.json';
 import bob_circuit from '@/public/circuits/bob_recursive.json';
 import { Noir } from '@noir-lang/noir_js';
-import { GAZOMETER_ADDRESS } from '@/app/lib/constants';
-import { GAZOMETER_ABI } from '@/app/lib/abi/gazometerABI';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
+import { GAZOMETER_ABI } from '@/lib/abi/gazometerABI';
 import { useTransactionReceipt } from 'wagmi';
 
 interface NoirCircuit {
@@ -95,7 +95,7 @@ export default function ReceiptPage() {
             // Set amount to send from Alice's proof data
             if (proof.alice_proof && proof.alice_proof.publicInputs) {
                 // The amount is in the public inputs array
-                const amountHex = proof.alice_proof.publicInputs[8]; // Assuming amount is at index 9
+                const amountHex = proof.alice_proof.publicInputs[1]; // Assuming amount is at index 9
                 // Convert from hex to wei, then format to ether
                 const amountInWei = BigInt(amountHex);
                 const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
@@ -295,7 +295,7 @@ export default function ReceiptPage() {
             }
 
             // Initialize backend
-            const backend = new UltraHonkBackend((alice_circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            const backend = new UltraHonkBackend((alice_circuit as NoirCircuit).bytecode, { recursive: true });
 
             // Verify Alice's proof
             if (!storedProofData.alice_proof) {
@@ -465,38 +465,8 @@ export default function ReceiptPage() {
                 throw new Error('Contract address must be 20 bytes long');
             }
 
-            // Create fixed-size arrays for verification_key, proof, and public_inputs
-            console.log('Creating fixed-size arrays...');
-            const verification_key = new Array(128).fill(0);
-            const proof = new Array(456).fill(0);
-            const public_inputs = new Array(10).fill(0);
 
-            // Map values from storedProofData
-            console.log('Mapping values from storedProofData...');
-            //@ts-ignore
-            storedProofData.vkAsFields.forEach((value, index) => {
-                if (index < verification_key.length) {
-                    verification_key[index] = value;
-                }
-            });
-            //@ts-ignore
-            storedProofData.proofAsFields.forEach((value, index) => {
-                if (index < proof.length) {
-                    proof[index] = value;
-                }
-            });
-            //@ts-ignore
-            storedProofData.alice_proof.publicInputs.forEach((value, index) => {
-                if (index < public_inputs.length) {
-                    public_inputs[index] = value;
-                }
-            });
 
-            console.log('Array lengths after mapping:', {
-                verification_key: verification_key.length,
-                proof: proof.length,
-                public_inputs: public_inputs.length
-            });
             const vkHash = "0x" + "0".repeat(64);
 
             // Get the current block number using public client
@@ -508,16 +478,15 @@ export default function ReceiptPage() {
             console.log("current block", currentBlock);
 
             const inputs = {
-                verification_key,
-                proof,
-                public_inputs: public_inputs.slice(0, 10),
+                verification_key: storedProofData.vkAsFields,
+                proof: storedProofData.proofAsFields,
+                public_inputs: storedProofData.inputsAsFields,
                 key_hash: vkHash,
                 bob_signature_nonce_1: signature1Bytes,
                 bob_signature_nonce_2: signature2Bytes,
                 chain_id: 11155111,
                 block_number: currentBlock.toString(),
                 message_nonce_1: Number(nonce) - 1,
-                message_nonce_2: Number(nonce),
                 pub_x_1: pubX1Bytes,
                 pub_x_2: pubX2Bytes,
                 pub_y_1: pubY1Bytes,
@@ -525,20 +494,24 @@ export default function ReceiptPage() {
                 contract_address: contractAddressBytes
             };
 
+
             console.log('Final inputs object:', JSON.stringify(inputs, null, 2));
 
             // Initialize Noir and backend
             console.log('Initializing Noir and backend...');
             const noir = new Noir(bob_circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((bob_circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            //@ts-ignore
+            const backend = new UltraHonkBackend((bob_circuit as NoirCircuit).bytecode, { recursive: true });
 
             // Generate the proof
             console.log('Generating witness...');
-            const { witness } = await noir.execute(inputs, foreignCallHandler);
+            //@ts-ignore
+            const { witness } = await noir.execute(inputs, foreignCallHandler, { keccak: true });
             console.log('Witness generated:', witness);
 
             console.log('Generating proof...');
-            const bob_proof = await backend.generateProof(witness);
+            //@ts-ignore
+            const bob_proof = await backend.generateProof(witness, { keccak: true });
             console.log('Proof generated:', bob_proof);
 
             // Switch to verification state
@@ -546,7 +519,8 @@ export default function ReceiptPage() {
             setIsVerifying(true);
 
             console.log('Verifying proof...');
-            const isVerified = await backend.verifyProof(bob_proof);
+            //@ts-ignore
+            const isVerified = await backend.verifyProof(bob_proof, { keccak: true });
             console.log('Proof verification result:', isVerified);
 
             if (isVerified) {
@@ -585,7 +559,7 @@ export default function ReceiptPage() {
         }
         setIsSubmittingProof(true);
         try {
-            const slicedInputs = publicInputs.slice(0, 11);
+            const slicedInputs = publicInputs.slice(0, 25);
             console.log("slicedInputs", slicedInputs);
 
             // Show transaction modal
@@ -628,7 +602,7 @@ export default function ReceiptPage() {
         setShowTxModal(true);
         setTxStatus('pending');
         try {
-            const slicedInputs = publicInputs.slice(0, 11);
+            const slicedInputs = publicInputs.slice(0, 25);
             const response = await fetch('/api/submit-proof', {
                 method: 'POST',
                 headers: {

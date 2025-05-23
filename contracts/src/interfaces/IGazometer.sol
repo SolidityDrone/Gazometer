@@ -9,17 +9,5 @@ interface IGazometer {
 
     // Helper functions
     function getBalanceCommitment(bytes32 commitment) external view returns (bytes32);
-    function getNullifier(bytes32 nullifier) external view returns (bool);
 
-    // Events
-    event ShieldedEth(address indexed sender, bytes32 commitment);
-    event UnshieldedEth(address indexed sender, bytes32 nullifier);
-    event Transacted(address indexed sender, bytes32 nullifier);
-    event ZkTransfer(
-        address indexed sender, 
-        bytes32 nullifier, 
-        bytes32 innerCommitment, 
-        bytes32 receiverInnerCommitment, 
-        bytes32 reciverNullifier
-    );
 }

@@ -27,19 +27,19 @@ fn main(
     chain_id: pub Field,
     block_number: u64,
     message_nonce_1: u64,
-    message_nonce_2: u64,
     pub_x_1: [u8; 32],
     pub_y_1: [u8; 32],
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
     contract_address: Address,
-    receipt_amount: pub Field,
-) -> pub (Field, Field, Field, Field, Field, Field, Field, Field) {
+    receipt_amount: i64,
+) -> pub (Field, Field, Field, Field, Field, Field, Field) {
 
     // ---- Check nonce are valid ------ //
+    let message_nonce_2 = message_nonce_1 + 1;
     let hashed_message_1 = hash_u64(message_nonce_1);
     let hashed_message_2 = hash_u64(message_nonce_2);
-    
+
 
     // Create 64-byte signature by taking first 64 bytes
     let mut sig_64_1: [u8; 64] = [0; 64];
@@ -86,21 +86,25 @@ fn main(
     // therefore we might check mapping(commit=>bool) is true, but we can neglet it here
     // as a false commitment wont match the sig, and a non mapped key will throw error
 
-   
-    
     //------ Compose new balance -----------//
     // @Dev: Security is low, for same sig and fiferent balance an attacker
     // could figure out the length of the value, by checking the switching bytes
     // But since we use 1 commit 1 derived key we get rid of this iussue
     
     // 1) decrypt balanceCommit for n-1 
-    let iv = [0, 0, 0, 0];
+    let iv = [
+        message_nonce_1 as Field, 
+        bytes_to_field(pub_x_1), 
+        bytes_to_field(pub_y_1), 
+        0
+    ];
     let nonce_1_derived_key = derive_key_from_signature(alice_signature_nonce_1);
     let encrypted_balance = safe_storage_to_field(commit_1_verified_storage.values[0]);
     let decrypted_1_balance_commit_balance = 
         decrypt_balance(alice_signature_nonce_1, encrypted_balance);
     // 2) add receipt_amount to the decrypted balanceCommit for n-1 
-    let new_balance = decrypted_1_balance_commit_balance + receipt_amount;
+    let receipt_amount_field: Field = receipt_amount as Field;
+    let new_balance = decrypted_1_balance_commit_balance + receipt_amount_field;
     // 3) encrypt the new balance with sign(n)
     let new_key = derive_key_from_signature(alice_signature_nonce_2);
     let balance_fields = [new_balance, 0, 0, 0, 0, 0, 0, 0];
@@ -110,21 +114,19 @@ fn main(
     // nullifier serve to prevent double spending of same state, we dont need to check
     // storage value for it, this pass to bob. If nullifier already exist bob's proof will be 
     // rejected in the smart contract
-    let nullifier = keccak256(keccak256(hex_bytes_to_ascii(alice_signature_nonce_2), 132), 32);
     
     // Extract last bytes before truncation
     let block_hash_last_byte = commit_1_verified_storage.block_hash[31] as Field;
     let commit_hash_last_byte = commit_2_hash[31] as Field;
     let last_bytes = (block_hash_last_byte * 256) + commit_hash_last_byte;
 
-    (
+    (   
+        receipt_amount_field,
         block_number as Field, 
         address_to_field(contract_address),
         field_from_bytes_32_trunc(commit_1_verified_storage.block_hash), 
-        field_from_bytes_32_trunc(nullifier), // <---- nullifier for commit_2 
-        encrypted_final_balance, // <-- balance destined for commit_2
+        encrypted_final_balance, 
         field_from_bytes_32_trunc(commit_2_hash),
-        receipt_amount,
         last_bytes  
     )
 }
@@ -159,8 +161,8 @@ fn derive_key_from_signature(signature: [u8; 65]) -> [Field; 4] {
     let mut key = [0; 4];
     for i in 0..4 {
         let mut value: u64 = 0;
-        for j in 0..4 {
-            value = (value << 8) | (signature[i * 4 + j] as u64);
+        for j in 0..16 {
+            value = (value << 4) | (signature[i * 16 + j] as u64);
         }
         key[i] = value as Field;
     }
@@ -402,15 +404,14 @@ fn test_init() {
         0xfc, 0xd0, 0x3f, 0xe0, 0x17, 0xd2, 0x6c, 0xb2, 0xb4, 0xcd, 0xd4, 0x63, 0xbf, 0x7b, 0x9a, 0xf2
     ];
     
-    let receipt_amount = 1;
+    let receipt_amount = -100;
     
-    let (block_number, contract_address, block_hash, nullifier, encrypted_balance, commit_2_hash, receipt_amount, last_bytes) = main(
+    let (receipt_amount, block_number, contract_address, block_hash, encrypted_balance, commit_2_hash, last_bytes) = main(
         alice_signature_nonce_1, 
         alice_signature_nonce_2, 
         chain_id, 
         block_number,
         message_nonce_1,
-        message_nonce_2,
         pub_x_1,
         pub_y_1,
         pub_x_2,
@@ -419,21 +420,18 @@ fn test_init() {
         receipt_amount
     );
     println("---- CIRCUIT OUTPUT ----");
-
+    println("receipt_amount");
+    println(receipt_amount);
     println("block_number");
     println(block_number);
     println("contract_address");
     println(contract_address);
     println("block_hash");
     println(block_hash);
-    println("nullifier");
-    println(nullifier);
     println("encrypted_balance");
     println(encrypted_balance);
     println("commit_2_hash");
     println(commit_2_hash);
-    println("receipt_amount");
-    println(receipt_amount);
     println("last_bytes");
     println(last_bytes);
     println("---- END OF CIRCUIT OUTPUT ----");
@@ -494,7 +492,7 @@ fn test_encryption() {
         0x07, 0x2f, 0x3e, 0x1e, 0x23, 0xa2, 0x17, 0xbd, 0xc3, 0xc4, 0x1b, 0x4c, 0x61, 0x35, 0x2b, 0xcc,
         0x78, 0xd8, 0x14, 0x0e, 0xb9, 0x81, 0x0b, 0xd3, 0xd3, 0x60, 0x37, 0xfb, 0x65, 0xc7, 0xaf, 0x40,
         0x6d, 0x4c, 0x37, 0x72, 0xb0, 0xc4, 0xd4, 0xfb, 0x29, 0x8c, 0xec, 0x36, 0xd0, 0x9d, 0x64, 0x6f,
-        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0xd3,
+        0xf6, 0xa2, 0x49, 0x71, 0x0e, 0x43, 0xcd, 0xf2, 0x85, 0x6e, 0x5d, 0x4e, 0xfd, 0xbf, 0x7b, 0x23,
         0x1c
     ];
 
@@ -503,12 +501,13 @@ fn test_encryption() {
     println("Derived key:");
     println(key);
 
-    // Create IV
-    let iv = [0, 0, 0, 0];
+    // Create a nonce and IV
+    let nonce = 11561; // Example nonce, can be generated dynamically
+    let iv = [nonce, 432, 324, 14]; // Example IV construction
 
-    // Create fields array with value 100
-    let original_value = 100;
-    let fields = [original_value, 0, 0, 0, 0, 0, 0, 0];
+    // Create fields array with a dynamic receipt amount
+    let receipt_amount = 100; // Example receipt amount
+    let fields = [receipt_amount as Field, 0, 0, 0, 0, 0, 0, 0];
     println("Fields before encryption:");
     println(fields);
 
@@ -516,14 +515,19 @@ fn test_encryption() {
     let encrypted_fields = enc::encrypt(fields, key, iv);
     println("Encrypted field [0]");
     println(encrypted_fields[0]);
+
+    // Mock an encrypted field for decryption
+    let mock_encrypt_field: Field = 0x2b82640da1997b95668f4e3718b5be7dc34dbd77f217a367f53aec0256ad151;
+
+    // Wrap the mock encrypted field in an array
+    let encrypted_array: [Field; 1] = [mock_encrypt_field];
+
     // Decrypt the first encrypted field
-    
-    
-    
-    let decrypted_value = decrypt_balance(alice_signature_nonce_1, encrypted_fields[0]);
+    let decrypted_fields = dec::decrypt(encrypted_fields, key, iv);
+    let decrypted_value = decrypted_fields[0]; // Assuming the first field is the one we want
     println("Decrypted value:");
     println(decrypted_value);
 
     // Assert that the decrypted value matches the original
-    assert(decrypted_value == original_value);
+    assert(decrypted_value == (receipt_amount as Field));
 } 

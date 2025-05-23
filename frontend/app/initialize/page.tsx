@@ -7,8 +7,8 @@ import { useAccount, useWriteContract, useTransactionReceipt } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/self_service.json';
-import { GAZOMETER_ADDRESS } from '../lib/constants';
-import { GAZOMETER_ABI } from '../lib/abi/gazometerABI';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
+import { GAZOMETER_ABI } from '@/lib/abi/gazometerABI';
 // Add type for the circuit
 interface NoirCircuit {
     bytecode: string;
@@ -317,13 +317,13 @@ export default function InitializePage() {
 
             // Initialize Noir and backend
             const noir = new Noir(circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
 
-            // Generate the proof
-            const { witness } = await noir.execute(inputs, foreignCallHandler);
+            //@ts-ignore
+            const { witness } = await noir.execute(inputs, { keccak: true });
             console.log('Circuit execution result:', witness);
-
-            const init_proof = await backend.generateProof(witness);
+            //@ts-ignore
+            const init_proof = await backend.generateProof(witness, { keccak: true });
             console.log('Generated proof:', init_proof);
 
             const proofBytes = `0x${Buffer.from(init_proof.proof).toString('hex')}`;
@@ -351,7 +351,7 @@ export default function InitializePage() {
             }
 
             // Initialize backend
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
 
             // Convert proof from hex string to Uint8Array
             const proofBytes = new Uint8Array(Buffer.from(proof.slice(2), 'hex'));

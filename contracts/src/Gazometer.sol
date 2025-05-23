@@ -10,12 +10,10 @@ interface IVerifier {
 }
 
 contract Gazometer is IGazometer {
-    bytes32 private transferProtocol;
-    mapping(bytes32 => bool) public nullifiers;
-    mapping(bytes32 commitment => bytes32 encryptedBalance) public balanceCommitment;
-    
+   
     IVerifier public selfServiceVerifier;
-    IVerifier public zkTransferVerifier;
+    IVerifier public zkTransferVerifier;    
+    mapping(bytes32 commitment => bytes32 encryptedBalance) public balanceCommitment;
 
     receive() external payable {}
 
@@ -33,12 +31,11 @@ contract Gazometer is IGazometer {
         bool isDeposit = uint256(_publicInputs[3]) != 0;
 
         bytes32 truncatedBlockHash = _publicInputs[4];  // 31 bytes
-        bytes32 nullifier = _publicInputs[5];
-        bytes32 encryptedBalance = _publicInputs[6];
-        bytes32 truncatedCommitment = _publicInputs[7];  // 31 bytes
-        address contractAddress = address(uint160(uint256(_publicInputs[8])));
-        address receiverAddress = address(uint160(uint256(_publicInputs[9])));
-        bytes32 lastBytes = _publicInputs[10];
+        bytes32 encryptedBalance = _publicInputs[5];
+        bytes32 truncatedCommitment = _publicInputs[6];  // 31 bytes
+        address contractAddress = address(uint160(uint256(_publicInputs[7])));
+        address receiverAddress = address(uint160(uint256(_publicInputs[8])));
+        bytes32 lastBytes = _publicInputs[9];
 
         // Extract both bytes from lastBytes
         uint8 blockHashLastByte = uint8((uint256(lastBytes) >> 8) & 0xFF);  // 0xaa
@@ -54,14 +51,11 @@ contract Gazometer is IGazometer {
             (uint256(truncatedCommitment) << 8) | commitLastByte
         );
 
-        require(!nullifiers[nullifier], "zkTransfer: contains nullified commitment");
         require(msg.value == amount, "SendVerifier: Amount mismatch");
         require(chainId == block.chainid, "SendVerifier: Invalid chain id");
         require(contractAddress == address(this), "SendVerifier: Invalid contract address");
-
-
+        require(balanceCommitment[commitment] == bytes32(0), "Commit nullified");
         balanceCommitment[commitment] = encryptedBalance; // even tho is known here the first time
-        nullifiers[nullifier] = true;
     }
 
 
@@ -74,12 +68,12 @@ contract Gazometer is IGazometer {
         bool isDeposit = uint256(_publicInputs[3]) != 0;
 
         bytes32 truncatedBlockHash = _publicInputs[4];  // 31 bytes
-        bytes32 nullifier = _publicInputs[5];
-        bytes32 encryptedBalance = _publicInputs[6];
-        bytes32 truncatedCommitment = _publicInputs[7];  // 31 bytes
-        address contractAddress = address(uint160(uint256(_publicInputs[8])));
-        address receiverAddress = address(uint160(uint256(_publicInputs[9])));
-        bytes32 lastBytes = _publicInputs[10];
+    
+        bytes32 encryptedBalance = _publicInputs[5];
+        bytes32 truncatedCommitment = _publicInputs[6];  // 31 bytes
+        address contractAddress = address(uint160(uint256(_publicInputs[7])));
+        address receiverAddress = address(uint160(uint256(_publicInputs[8])));
+        bytes32 lastBytes = _publicInputs[9];
 
         // Extract both bytes from lastBytes
         uint8 blockHashLastByte = uint8((uint256(lastBytes) >> 8) & 0xFF);  // 0xaa
@@ -95,11 +89,11 @@ contract Gazometer is IGazometer {
             (uint256(truncatedCommitment) << 8) | commitLastByte
         );
 
-        require(!nullifiers[nullifier], "SelfServiceVerifier: contains nullified commitment");
+        require(balanceCommitment[commitment] == bytes32(0), "Commit nullified");
         require(uint(chainId) == block.chainid, "SelfServiceVerifier: Invalid chain id");
         require(_verifyBlockHash(blockHash, blockNumber), "SelfServiceVerifier: Invalid block hash");
         balanceCommitment[commitment] = encryptedBalance;
-        nullifiers[nullifier] = true;
+       
 
         
         if (isDeposit) {
@@ -118,13 +112,11 @@ contract Gazometer is IGazometer {
         uint256 blockNumber = uint256(_publicInputs[1]);
         address contractAddress = address(uint160(uint256(_publicInputs[2])));
         bytes32 truncatedBlockHash = _publicInputs[3];
-        bytes32 bobNullifier = _publicInputs[4];
-        bytes32 bobEncryptedBalance = _publicInputs[5];
-        bytes32 truncatedBobCommitment = _publicInputs[6];
-        bytes32 aliceNullifier = _publicInputs[7];
-        bytes32 aliceEncryptedBalance = _publicInputs[8];
-        bytes32 truncatedAliceCommitment = _publicInputs[9];
-        bytes32 lastBytes = _publicInputs[10];
+        bytes32 bobEncryptedBalance = _publicInputs[4];
+        bytes32 truncatedBobCommitment = _publicInputs[5];
+        bytes32 aliceEncryptedBalance = _publicInputs[6];
+        bytes32 truncatedAliceCommitment = _publicInputs[7];
+        bytes32 lastBytes = _publicInputs[8];
 
         // Extract bytes from lastBytes according to the pattern:
         // 0xFF000000: blockHash last byte
@@ -151,14 +143,12 @@ contract Gazometer is IGazometer {
 
         require(chainId == block.chainid, "SelfServiceVerifier: Invalid chain id");
         require(_verifyBlockHash(blockHash, blockNumber), "SelfServiceVerifier: Invalid block hash");
-        require(!nullifiers[bobNullifier] || !nullifiers[aliceNullifier], "zkTransfer: contains nullified commitment");
         require(contractAddress == address(this), "zkTransfer: Invalid contract address");
-
+        require(balanceCommitment[aliceCommitment] == bytes32(0), "Alice commit is nullified");
+        require(balanceCommitment[bobCommitment] == bytes32(0), "Bob commit is nullified");
         balanceCommitment[bobCommitment] = bobEncryptedBalance;
         balanceCommitment[aliceCommitment] = aliceEncryptedBalance;
 
-        nullifiers[bobNullifier] = true;
-        nullifiers[aliceNullifier] = true;
         // transfer happens in state changes, due to this zk mechanic no transfer is executed in the stack 
     }
 
@@ -169,8 +159,4 @@ contract Gazometer is IGazometer {
     function getBalanceCommitment(bytes32 commitment) public view returns (bytes32) {
         return balanceCommitment[commitment];
     }   
-
-    function getNullifier(bytes32 nullifier) public view returns (bool) {
-        return nullifiers[nullifier];
-    }
 }

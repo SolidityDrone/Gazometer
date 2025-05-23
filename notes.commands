@@ -1,11 +1,11 @@
 nargo execute --oracle-resolver=http://127.0.0.1:5555
  
-bb prove -b ./target/self_service.json -w ./target/self_service.gz -o ./target --oracle_hash keccak
-bb write_vk -b ./target/self_service.json -o ./target --oracle_hash keccak
+bb prove -b ./target/bob_recursive.json -w ./target/bob_recursive.gz -o ./target --oracle_hash keccak --recursive --honk-recursion 1
+bb write_vk -b ./target/bob_recursive.json -o ./target --oracle_hash keccak
 bb verify -k ./target/vk -p ./target/proof --oracle_hash keccak
 
 
-bb write_solidity_verifier -k ./target/vk -o ./target/SelfServiceVerifier.sol
+bb write_solidity_verifier -k ./target/vk -o ./target/P2PVerifier.sol
 
 
-bb prove -b ./target/self_service.json -w ./target/self_service -o ./target --oracle_hash keccak --output_format bytes
+bb prove -b ./target/bob_recursive.json -w ./target/bob_recursive -o ./target --oracle_hash keccak --output_format bytes

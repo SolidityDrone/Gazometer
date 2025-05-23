@@ -33,7 +33,7 @@ fn main(
     amount: pub Field,
     is_deposit: pub Field,
     receiver_address: Address
-) -> pub (Field, Field, Field, Field, Field, Field, Field) {
+) -> pub (Field, Field, Field, Field, Field, Field) {
     // Create 64-byte signatures
     let sig_64_1 = create_64_byte_signature(user_signature_nonce_1);
     let sig_64_2 = create_64_byte_signature(user_signature_nonce_2);
@@ -71,7 +71,12 @@ fn main(
         
         // For initial state, just encrypt the amount using sig1
         let key = derive_key_from_signature(user_signature_nonce_1);
-        let iv = [0, 0, 0, 0];
+        let iv = [
+            message_nonce_1 as Field, 
+            bytes_to_field(pub_x_1), 
+            bytes_to_field(pub_y_1), 
+            0
+        ];  
         let balance_fields = [amount, 0, 0, 0, 0, 0, 0, 0];
         let encrypted_fields = enc::encrypt(balance_fields, key, iv);
         final_encrypted_balance = encrypted_fields[0];
@@ -108,8 +113,7 @@ fn main(
             is_deposit == 1  // 1 for deposit (add), 0 for withdrawal (subtract)
         );
 
-        // Compute nullifier
-        final_nullifier = keccak256(keccak256(hex_bytes_to_ascii(user_signature_nonce_2), 132), 32);
+
         final_block_hash = field_from_bytes_32_trunc(commit_1_verified_storage.block_hash);
         final_commit_hash = commit_2_hash;
         
@@ -122,7 +126,6 @@ fn main(
     // Return values in order matching _publicInputs array
     (
         final_block_hash,        // _publicInputs[4]
-        field_from_bytes_32_trunc(final_nullifier),  // _publicInputs[5]
         final_encrypted_balance, // _publicInputs[6]
         field_from_bytes_32_trunc(final_commit_hash),  // _publicInputs[7]
         address_to_field(contract_address),  // _publicInputs[8]
@@ -473,7 +476,7 @@ fn test_init() {
     let amount = 100;
     let is_deposit = 1;  // 1 for deposit, 0 for withdrawal
     
-    let (block_hash, nullifier, encrypted_balance, commit_hash, contract_address_field, receiver_address_field, last_bytes) = main(
+    let (block_hash, encrypted_balance, commit_hash, contract_address_field, receiver_address_field, last_bytes) = main(
         user_signature_nonce_1, 
         user_signature_nonce_2, 
         chain_id, 
@@ -493,8 +496,7 @@ fn test_init() {
 
     println("block_hash");
     println(block_hash);
-    println("nullifier");
-    println(nullifier);
+    
     println("encrypted_balance");
     println(encrypted_balance);
     println("commit_hash");

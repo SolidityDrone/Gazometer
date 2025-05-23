@@ -7,8 +7,8 @@ import { useAccount, useWriteContract, useTransactionReceipt } from 'wagmi';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import circuit from '@/public/circuits/self_service.json';
-import { GAZOMETER_ADDRESS } from '../lib/constants';
-import { GAZOMETER_ABI } from '../lib/abi/gazometerABI';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
+import { GAZOMETER_ABI } from '@/lib/abi/gazometerABI';
 
 // Add type for the circuit
 interface NoirCircuit {
@@ -233,7 +233,7 @@ export default function SelfServicePage() {
 
             // Initialize Noir and backend
             const noir = new Noir(circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode, { threads: 2 }, { recursive: true });
+            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
 
             // Create the foreign call handler
             const foreignCallHandler = async (name: string, inputs: string[] | any) => {
@@ -330,25 +330,25 @@ export default function SelfServicePage() {
                 }
             };
 
-            // Generate the proof
-            const { witness } = await noir.execute(inputs, foreignCallHandler);
+            //@ts-ignore
+            const { witness } = await noir.execute(inputs, foreignCallHandler, { keccak: true });
             console.log('Circuit execution result:', witness);
-
-            const init_proof = await backend.generateProof(witness);
+            //@ts-ignore
+            const init_proof = await backend.generateProof(witness, { keccak: true });
             console.log('Generated proof:', init_proof);
 
             // Switch to verification state
             setIsProving(false);
             setIsVerifying(true);
 
-            // Verify the proof
-            const isVerified = await backend.verifyProof(init_proof);
+            //@ts-ignore
+            const isVerified = await backend.verifyProof(init_proof, { keccak: true });
             console.log("proof verification result:", isVerified);
 
             if (isVerified) {
                 setProofVerified(true);
                 const proofBytes = `0x${Buffer.from(init_proof.proof).toString('hex')}`;
-                const publicInputsArray = init_proof.publicInputs.slice(0, 11);
+                const publicInputsArray = init_proof.publicInputs.slice(0, 10);
 
                 // Set the proof state
                 setProof(proofBytes);
@@ -380,7 +380,7 @@ export default function SelfServicePage() {
         }
         setIsLoading(true);
         try {
-            const slicedInputs = publicInputs.slice(0, 11);
+            const slicedInputs = publicInputs.slice(0, 10);
             console.log("isDeposit", isDeposit);
             console.log("slicedInputs", slicedInputs);
             writeContract({
@@ -411,7 +411,7 @@ export default function SelfServicePage() {
         setShowTxModal(true);
         setTxStatus('pending');
         try {
-            const slicedInputs = publicInputs.slice(0, 11);
+            const slicedInputs = publicInputs.slice(0, 10);
             const response = await fetch('/api/submit-proof', {
                 method: 'POST',
                 headers: {

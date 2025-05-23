@@ -7,14 +7,24 @@ fn main(
     
     // Encrypted balance (as a field element)
     encrypted_balance: Field,
+
+    // New parameters for IV
+    message_nonce: u64,
+    pub_x: [u8; 32],
+    pub_y: [u8; 32],
 ) -> pub Field {
 
     let signature_64 = create_64_byte_signature(signature);
     // Derive key from signature (deterministic)
     let key = derive_key_from_signature(signature_64);
     
-    // Create a fixed IV (all zeros)
-    let iv = [0, 0, 0, 0];
+    // Create the IV using the new parameters
+    let iv = [
+        message_nonce as Field,
+        bytes_to_field(pub_x),
+        bytes_to_field(pub_y),
+        0
+    ];
     
     // Create encrypted fields array
     let encrypted_fields = [encrypted_balance, 0, 0, 0, 0, 0, 0, 0];
@@ -35,6 +45,18 @@ fn create_64_byte_signature(signature: [u8; 65]) -> [u8; 64] {
 }
 
 
+fn bytes_to_field(bytes: [u8; 32]) -> Field {
+    let mut result: Field = 0;
+    
+    // Convert bytes to field
+    for i in 0..32 {
+        result = result * 256 + (bytes[i] as Field);
+    }
+    
+    result
+}
+
+
 // Unconstrained function for frontend decryption
 fn decrypt_balance(
     // Signature data
@@ -42,12 +64,22 @@ fn decrypt_balance(
     
     // Encrypted balance (as a field element)
     encrypted_balance: Field,
+
+    // New parameters for IV
+    message_nonce: u64,
+    pub_x: [u8; 32],
+    pub_y: [u8; 32],
 ) -> pub Field {
     // Derive key from signature (deterministic)
     let key = derive_key_from_signature(signature);
     
-    // Create a fixed IV (all zeros)
-    let iv = [0, 0, 0, 0];
+    // Create the IV using the new parameters
+    let iv = [
+        message_nonce as Field,
+        bytes_to_field(pub_x),
+        bytes_to_field(pub_y),
+        0
+    ];
     
     // Create encrypted fields array
     let encrypted_fields = [encrypted_balance, 0, 0, 0, 0, 0, 0, 0];
@@ -90,15 +122,25 @@ fn test_decryption_with_signature() {
         0x1b
     ];
     
-
-    
     // Test with a specific encrypted value
     let encrypted_balance: Field = 0x0394e37d9de02f6842dfac3c43bfe1137f1bbd4b1ca26e02c4c71889d7373ebe;
-    
-    // Test both constrained and unconstrained decryption
-    let decrypted_balance = main(signature, encrypted_balance);
 
-    
-    println(decrypted_balance)
+    // New parameters for IV
+    let message_nonce: u64 = 11561; // Example nonce
+    let pub_x: [u8; 32] = [
+        // Example public key x-coordinate
+        0xca, 0xb1, 0x4a, 0x0b, 0xb5, 0x57, 0xdf, 0xe9, 0x0a, 0x26, 0x8d, 0xcd, 0x04, 0xf1, 0x7e, 0x2e,
+        0xa8, 0xd8, 0xcc, 0xd5, 0x57, 0x71, 0xaa, 0x18, 0xec, 0x72, 0x3a, 0xf2, 0xee, 0x45, 0x92, 0xe6
+    ];
+    let pub_y: [u8; 32] = [
+        // Example public key y-coordinate
+        0x75, 0xd4, 0x4b, 0xb8, 0xbc, 0x98, 0xdb, 0x93, 0x24, 0x0f, 0x48, 0x07, 0x7c, 0x63, 0xaa, 0x4b,
+        0x29, 0xd5, 0x9a, 0xa3, 0x35, 0xcf, 0xf4, 0xb2, 0xa0, 0x88, 0x23, 0x4f, 0x69, 0xc2, 0x2e, 0xba
+    ];
+
+    // Test both constrained and unconstrained decryption
+    let decrypted_balance = main(signature, encrypted_balance, message_nonce, pub_x, pub_y);
+
+    println(decrypted_balance);
 }
   
