@@ -101,9 +101,13 @@ export default function ReceiptPage() {
                 if (receipt.alice_proof && receipt.alice_proof.publicInputs) {
                     // The amount is in the public inputs array
                     const amountHex = receipt.alice_proof.publicInputs[1]; // Assuming amount is at index 9
-                    // Convert from hex to wei, then format to ether
+                    // Convert from hex to i64 (signed 64-bit integer)
                     const amountInWei = BigInt(amountHex);
-                    const amountInEth = formatUnits(amountInWei, 18); // 18 decimals for ether
+                    // Convert to signed 64-bit integer
+                    const amount = amountInWei > BigInt("0x7fffffffffffffff")
+                        ? Number(amountInWei - BigInt("0x10000000000000000"))
+                        : Number(amountInWei);
+                    const amountInEth = formatUnits(BigInt(amount), 18); // 18 decimals for ether
                     setAmountToSend(amountInEth);
                 }
 
@@ -295,45 +299,6 @@ export default function ReceiptPage() {
         }
     };
 
-    const verifyAliceProof = async () => {
-        try {
-            setIsVerifying(true);
-            setError(null);
-            setIsValidAlice(null);
-
-            console.log('Stored proof data:', storedProofData);
-
-            if (!storedProofData) {
-                throw new Error('No proof data available');
-            }
-
-            // Initialize backend
-            const backend = new UltraHonkBackend((alice_circuit as NoirCircuit).bytecode, { recursive: true });
-
-            // Verify Alice's proof
-            if (!storedProofData.alice_proof) {
-                console.log('Missing alice_proof in storedProofData:', storedProofData);
-                throw new Error('Invalid Alice proof data structure');
-            }
-            const aliceProofArray = new Uint8Array(Object.values(storedProofData.alice_proof.proof));
-            const aliceReconstructedProof = {
-                proof: aliceProofArray,
-                publicInputs: storedProofData.alice_proof.publicInputs
-            };
-            const isValidAlice = await backend.verifyProof(aliceReconstructedProof);
-            setIsValidAlice(isValidAlice);
-
-        } catch (error) {
-            console.error('Error verifying proof:', error);
-            if (error instanceof Error) {
-                setError(error.message);
-            } else {
-                setError('Unknown error occurred');
-            }
-        } finally {
-            setIsVerifying(false);
-        }
-    };
 
     const generateBobProof = async () => {
         if (!bob_circuit) {
@@ -750,34 +715,13 @@ export default function ReceiptPage() {
                     </div>
                 )}
 
-                {/* Alice's Proof Verification */}
-                <div className="mb-6">
-                    <h2 className="text-lg font-medium text-white mb-4">Alice's Proof Verification</h2>
-                    <button
-                        onClick={verifyAliceProof}
-                        disabled={isVerifying}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                    >
-                        {isVerifying ? 'Verifying...' : 'Verify Alice\'s Proof'}
-                    </button>
-
-                    {isValidAlice !== null && !isVerifying && (
-                        <div className="mt-4">
-                            <div className={`p-4 rounded-md ${isValidAlice ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
-                                <p className={`text-sm ${isValidAlice ? 'text-green-300' : 'text-red-300'}`}>
-                                    Alice's Proof: {isValidAlice ? '✅ Valid' : '❌ Invalid'}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </div>
 
                 {/* Bob's Signing Section */}
                 <div className="border-t border-gray-700 pt-6">
-                    <h2 className="text-lg font-medium text-white mb-4">Bob's Signatures</h2>
+                    <h2 className="text-lg font-medium text-white mb-4">Hey Bob, that's the receipt</h2>
                     <div className="mb-4">
                         <label className="block text-sm font-medium text-white">
-                            Amount to Send (Ethers)
+                            Amount to accomodate (Ethers)
                         </label>
                         <div className="mt-1 p-2 bg-gray-800 rounded-md text-white">
                             {amountToSend || 'Loading...'}

@@ -298,7 +298,7 @@ export default function SignPage() {
                 pub_x_2: pubX2Bytes,
                 pub_y_1: pubY1Bytes,
                 pub_y_2: pubY2Bytes,
-                receipt_amount: amountToReceive
+                receipt_amount: Number(amountToReceive)
             };
 
             console.log('Inputs:', inputs);
@@ -546,7 +546,7 @@ export default function SignPage() {
                             onChange={(e) => setAmountToReceive(e.target.value)}
                             className="mt-1 block w-full border border-green-500 bg-gray-800 text-white shadow-sm focus:border-green-500 focus:ring-green-500"
                             required
-                            step="0.000000000000000001"
+                            step="1"
                         />
                     </div>
 
