@@ -32,7 +32,7 @@ fn main(
     pub_x_2: [u8; 32],
     pub_y_2: [u8; 32],
     contract_address: Address,
-    receipt_amount: i64,
+    receipt_amount: i64
 ) -> pub (Field, Field, Field, Field, Field, Field, Field) {
 
     // ---- Check nonce are valid ------ //

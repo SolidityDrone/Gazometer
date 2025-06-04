@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { createWalletClient, http, Hex, encodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
-import { GAZOMETER_ABI } from '../../lib/abi/gazometerABI';
-import { GAZOMETER_ADDRESS } from '../../lib/constants';
+import { GAZOMETER_ABI } from '@/lib/abi/gazometerABI';
+import { GAZOMETER_ADDRESS } from '@/lib/constants';
 
 // Use environment variable for private key (never commit real keys!)
 const PRIVATE_KEY = process.env.BACKEND_PRIVATE_KEY?.startsWith('0x')
