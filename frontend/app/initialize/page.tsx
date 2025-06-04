@@ -66,6 +66,8 @@ export default function InitializePage() {
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const [showTxModal, setShowTxModal] = useState(false);
     const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'error' | null>(null);
+    const [proofTimer, setProofTimer] = useState(0);
+    const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
     const { address } = useAccount();
 
     const { writeContract, isPending, isSuccess, data, error: writeError } = useWriteContract();
@@ -99,6 +101,28 @@ export default function InitializePage() {
             }, 3000);
         }
     }, [isReceiptError, writeError]);
+
+    // Timer effect for proof generation
+    useEffect(() => {
+        if (isProving) {
+            setProofTimer(0);
+            const interval = setInterval(() => {
+                setProofTimer(prev => prev + 1);
+            }, 1000);
+            setTimerInterval(interval);
+        } else {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                setTimerInterval(null);
+            }
+        }
+
+        return () => {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+        };
+    }, [isProving]);
 
     const handleSign = async (message: string, isFirstSignature: boolean) => {
         try {
@@ -317,7 +341,8 @@ export default function InitializePage() {
 
             // Initialize Noir and backend
             const noir = new Noir(circuit as NoirCircuit);
-            const backend = new UltraHonkBackend((circuit as NoirCircuit).bytecode);
+            const threads = window.navigator.hardwareConcurrency;
+            const backend = new UltraHonkBackend(circuit.bytecode, { threads });
 
             //@ts-ignore
             const { witness } = await noir.execute(inputs, { keccak: true });
@@ -463,6 +488,13 @@ export default function InitializePage() {
         handleSuccessfulTransaction();
     }, [receipt, address]);
 
+    // Helper function to format time
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+    };
+
     return (
         <div className="min-h-screen py-24 px-4 sm:px-6 lg:px-8">
             <div className="max-w-md mx-auto bg-gray-900/80 backdrop-blur-sm shadow-md p-6">
@@ -474,6 +506,12 @@ export default function InitializePage() {
                         <div className="bg-gray-900 p-6 shadow-xl flex flex-col items-center border border-green-500">
                             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mb-4"></div>
                             <p className="text-white text-lg">Generating your initial commit proof...</p>
+                            <div className="mt-3 flex items-center space-x-2">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <p className="text-green-400 text-sm font-mono">
+                                    Elapsed time: {formatTime(proofTimer)}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -685,8 +723,10 @@ export default function InitializePage() {
                         <p className="text-sm text-gray-300">A receipt link has been generated. Click the button below to copy it.</p>
                         <button
                             onClick={() => {
-                                navigator.clipboard.writeText(receiptLink);
-                                alert('Link copied to clipboard!');
+                                if (receiptLink) {
+                                    navigator.clipboard.writeText(receiptLink);
+                                    alert('Link copied to clipboard!');
+                                }
                             }}
                             className="mt-2 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         >
