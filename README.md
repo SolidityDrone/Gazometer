@@ -53,7 +53,7 @@ yarn oracle-server:watch-nargo
 cd circuits/main/gazometer_self/self_service
 
 # Execute with oracle
- nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../../target/self_service.* ./target/
+ nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../target/self_service.* ./target/
 
 # Generate proof
 bb prove -b ./target/self_service.json -w ./target/self_service.gz -o ./target --oracle_hash keccak
@@ -70,7 +70,7 @@ bb verify -k ./target/vk -p ./target/proof --oracle_hash keccak
 cd circuits/main/gazometer_p2p/alice_receipt
 
 # Execute with oracle
- nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../../target/alice_receipt.* ./target/
+ nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../target/alice_receipt.* ./target/
 
 # Generate proof (with recursive option)
 bb prove -b ./target/alice_receipt.json -w ./target/alice_receipt.gz -o ./target --oracle_hash keccak --recursive
@@ -81,7 +81,7 @@ bb prove -b ./target/alice_receipt.json -w ./target/alice_receipt.gz -o ./target
 cd circuits/main/gazometer_p2p/bob_recursive
 
 # Execute with oracle
- nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../../target/bob_recursive.* ./target/
+ nargo execute --oracle-resolver=http://127.0.0.1:5555 && cp ../../../target/bob_recursive.* ./target/
 
 # Generate proof (with recursive and honk options)
 bb prove -b ./target/bob_recursive.json -w ./target/bob_recursive.gz -o ./target --oracle_hash keccak --recursive --honk_recursion 1

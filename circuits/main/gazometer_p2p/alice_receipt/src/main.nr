@@ -518,7 +518,7 @@ fn test_encryption() {
 
     // Mock an encrypted field for decryption
     let mock_encrypt_field: Field = 0x2b82640da1997b95668f4e3718b5be7dc34dbd77f217a367f53aec0256ad151;
-
+    
     // Wrap the mock encrypted field in an array
     let encrypted_array: [Field; 1] = [mock_encrypt_field];
 
